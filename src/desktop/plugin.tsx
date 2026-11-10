@@ -15,11 +15,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  COMPOSER_AREAS,
   PALETTE_AREA,
   PANES_AREA,
   ROUTES_AREA,
   SIDEBAR_NAV_AREA,
   STATUSBAR_AREAS,
+  TITLEBAR_AREAS,
   TRANSCRIPT_DIRECTIVE_AREA,
   host,
   useValue,
@@ -838,13 +840,16 @@ function AvatarStageView({
   );
 }
 
-/** Statusbar chip + Floating VTuber Corner Overlay mounted in STATUSBAR_AREAS.right. */
 function StatusbarAndFloatingOverlay({
   controller,
   storage,
+  compactButton = false,
+  renderOverlay = false,
 }: {
   controller: SharedController;
   storage: { get<T>(k: string, d: T): T; set(k: string, v: unknown): void };
+  compactButton?: boolean;
+  renderOverlay?: boolean;
 }) {
   const state = useControllerState(controller);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>(() =>
@@ -884,10 +889,10 @@ function StatusbarAndFloatingOverlay({
         title="Click: cycle Floating / Pane / Hidden · Right-click: open VRM Studio"
         type="button"
       >
-        🎭 {state.mood} ({state.mode})
+        {compactButton ? `🎭 ${state.mood}` : `🎭 ${state.mood} (${state.mode})`}
       </button>
 
-      {state.mode === 'floating' && (
+      {renderOverlay && state.mode === 'floating' && (
         <div
           aria-label="Floating VTuber Avatar Overlay"
           style={{
@@ -1383,6 +1388,31 @@ const plugin = {
     });
 
     ctx.registerMany([
+      {
+        id: 'titlebar-overlay',
+        area: TITLEBAR_AREAS.right,
+        order: 95,
+        render: () => (
+          <StatusbarAndFloatingOverlay
+            compactButton
+            controller={controller}
+            renderOverlay
+            storage={ctx.storage}
+          />
+        ),
+      },
+      {
+        id: 'composer-overlay',
+        area: COMPOSER_AREAS.actions,
+        order: 95,
+        render: () => (
+          <StatusbarAndFloatingOverlay
+            compactButton
+            controller={controller}
+            storage={ctx.storage}
+          />
+        ),
+      },
       {
         id: 'statusbar-overlay',
         area: STATUSBAR_AREAS.right,

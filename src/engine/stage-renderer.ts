@@ -422,7 +422,6 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
         : 0;
       expr.setValue('blink', state.emotionalBase === 'asleep' ? 1 : blink);
     }
-
     if (companionPlayer) {
       companionPlayer.update(dt, {
         thinking: state.activity === 'thinking' || state.activity === 'tool',
@@ -431,6 +430,43 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
       });
     }
 
+    if (!clipPlayer?.playing) {
+      // Procedural humanoid stance + breathing + talking gestures when baked clips are still loading or offline
+      const dir = currentVrm?.meta?.metaVersion === '0' ? -1 : 1;
+      const speaking = audioClock.speechTime !== null;
+      const waving = state.reaction === 'wave' || state.reaction === 'celebrate';
+      const lUpper = getBoneNode('leftUpperArm');
+      const rUpper = getBoneNode('rightUpperArm');
+      const lLower = getBoneNode('leftLowerArm');
+      const rLower = getBoneNode('rightLowerArm');
+      const chest = getBoneNode('chest');
+      const head = getBoneNode('head');
+      if (lUpper) {
+        lUpper.rotation.z = dir * (-1.18 + Math.sin(elapsedSec * 1.6) * 0.03);
+        lUpper.rotation.x = speaking ? Math.sin(elapsedSec * 5.2) * 0.14 : 0.06;
+      }
+      if (rUpper) {
+        rUpper.rotation.z = waving
+          ? dir * (-2.1 + Math.sin(elapsedSec * 9.0) * 0.25)
+          : dir * (1.18 - Math.sin(elapsedSec * 1.6) * 0.03);
+        rUpper.rotation.x = speaking ? Math.cos(elapsedSec * 4.8) * 0.14 : 0.06;
+      }
+      if (lLower) lLower.rotation.z = speaking ? 0.25 + Math.sin(elapsedSec * 6.0) * 0.12 : 0.12;
+      if (rLower) rLower.rotation.z = waving ? -0.45 + Math.sin(elapsedSec * 10.0) * 0.3 : speaking ? -0.25 : -0.12;
+      if (chest) {
+        chest.rotation.x = Math.sin(elapsedSec * 1.7) * 0.025;
+        chest.rotation.y = Math.sin(elapsedSec * 0.8) * 0.04;
+      }
+      if (head) {
+        head.rotation.y = Math.sin(elapsedSec * 1.1) * 0.07;
+        head.rotation.x =
+          state.activity === 'thinking'
+            ? -0.12 + Math.sin(elapsedSec * 2.0) * 0.04
+            : speaking
+              ? Math.sin(elapsedSec * 6.5) * 0.05
+              : Math.sin(elapsedSec * 1.4) * 0.025;
+      }
+    }
     companionMotion?.update(dt);
     gltfMixer?.update(dt);
     holoAvatar?.update(dt, elapsedSec);
