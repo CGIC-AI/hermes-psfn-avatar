@@ -79,8 +79,16 @@ def normalize_psfn_emotion_payload(payload: dict[str, Any]) -> dict[str, Any] | 
     if not isinstance(emotion, dict):
         return None
 
-    # Extract VAD vector (supports {valence, arousal, dominance} or nested vector/baseline)
-    vec = emotion.get("vector") if isinstance(emotion.get("vector"), dict) else emotion
+    # Extract VAD vector (supports {vad: {valence, arousal, dominance}}, {vector: ...}, or flat)
+    vec = (
+        emotion.get("vad")
+        if isinstance(emotion.get("vad"), dict)
+        else emotion.get("vector")
+        if isinstance(emotion.get("vector"), dict)
+        else emotion.get("mood")
+        if isinstance(emotion.get("mood"), dict)
+        else emotion
+    )
     valence = float(vec.get("valence", 0.0) or 0.0)
     arousal = float(vec.get("arousal", 0.0) or 0.0)
     dominance = float(vec.get("dominance", 0.0) or 0.0)
@@ -101,13 +109,17 @@ def normalize_psfn_emotion_payload(payload: dict[str, Any]) -> dict[str, Any] | 
 
     discrete_list.sort(key=lambda x: x["score"], reverse=True)
 
-    # Determine dominant mood (mirrors psfn-framework DISCRETE_OVERRIDE_MIN = 0.4)
-    dominant_mood = str(emotion.get("dominant") or emotion.get("mood") or "").strip().lower()
+    raw_mood_field = emotion.get("dominant") or (emotion.get("mood") if isinstance(emotion.get("mood"), str) else "")
+    dominant_mood = str(raw_mood_field or "").strip().lower()
     if dominant_mood not in MOOD_NAMES:
         dominant_mood = ""
     if not dominant_mood and discrete_list:
         top = discrete_list[0]
-        if top["label"] in MOOD_NAMES and top["score"] >= 0.35:
+        if top["label"] in MOOD_NAMES and top["label"] != "neutral" and top["score"] >= 0.12:
+            dominant_mood = top["label"]
+        elif len(discrete_list) > 1 and discrete_list[1]["label"] in MOOD_NAMES and discrete_list[1]["score"] >= 0.15:
+            dominant_mood = discrete_list[1]["label"]
+        elif top["label"] in MOOD_NAMES and top["score"] >= 0.35:
             dominant_mood = top["label"]
 
     vad = {
@@ -116,9 +128,18 @@ def normalize_psfn_emotion_payload(payload: dict[str, Any]) -> dict[str, Any] | 
         "dominance": round(max(-1.0, min(1.0, dominance)), 4),
     }
     base = DISCRETE_TO_BASE.get(dominant_mood) if dominant_mood else vad_to_emotional_base(valence, arousal, dominance)
-    mood = dominant_mood or "neutral"
+    base_to_mood = {
+        "happy": "joy",
+        "content": "relief",
+        "excited": "excitement",
+        "curious": "curiosity",
+        "sad": "sadness",
+        "anxious": "nervousness",
+        "grumpy": "annoyance",
+        "tired": "relief",
+    }
+    mood = dominant_mood or base_to_mood.get(base or "neutral", "neutral")
     clip = MOOD_CLIPS.get(mood)
-
     concerns = payload.get("openConcerns") or payload.get("focus") or []
     concerns_count = len(concerns) if isinstance(concerns, list) else 0
 
@@ -144,7 +165,7 @@ def sync_from_psfn_lite() -> dict[str, Any] | None:
         return None
     url, token, timeout = cfg
     req = urllib.request.Request(
-        f"{url}/api/lite/inner-life",
+        f"{url}/api/lite/overview",
         method="GET",
         headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
     )
