@@ -102,6 +102,7 @@ async def post_perform(request: Request) -> Response:
             mode=body.get("mode"),
             vad=body.get("vad"),
             clip=body.get("clip"),
+            active_model=body.get("active_model") if isinstance(body.get("active_model"), dict) else None,
         )
         return {"ok": True, "state": updated}
 
@@ -217,7 +218,7 @@ async def post_select_model(request: Request) -> Response:
         _load_root_pkg()
         from hermes_psfn_avatar_runtime.state import list_models, write_state
 
-        target_id = str(body.get("id") or body.get("filename") or "builtin:holo").strip()
+        target_id = str(body.get("id") or body.get("filename") or "file:Nous-Girl.vrm").strip()
         for item in list_models():
             if item["id"] == target_id or item.get("filename") == target_id:
                 active = {
@@ -274,10 +275,10 @@ async def get_model_file(filename: str) -> Response:
 
     def _read_model():
         _load_root_pkg()
-        from hermes_psfn_avatar_runtime.state import models_dir
+        from hermes_psfn_avatar_runtime.state import find_model_file
 
-        path = models_dir() / filename
-        if not path.is_file():
+        path = find_model_file(filename)
+        if path is None or not path.is_file():
             return None
         return path.read_bytes()
 

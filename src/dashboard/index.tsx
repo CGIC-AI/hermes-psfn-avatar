@@ -142,7 +142,6 @@ function mountDashboardPlugin(): void {
           fetchClipsManifest,
         });
         stageRef.current = stage;
-        void stage.loadHoloModel();
       } catch {
         // Ignore if WebGL is unavailable in headless browser
       }
@@ -152,22 +151,21 @@ function mountDashboardPlugin(): void {
       };
     }, []);
 
-    const filename = state.active_model?.filename ?? null;
-    const kind = state.active_model?.kind ?? 'holo';
-    const modelName = state.active_model?.name ?? 'Holo-Rig';
+    const filename = state.active_model?.filename || 'Nous-Girl.vrm';
+    const modelName = state.active_model?.name || 'Nous-Girl (Hermes · CC BY-NC-SA 4.0)';
 
     useEffect(() => {
       const stage = stageRef.current;
       if (!stage) return;
-      if (kind === 'holo' || !filename) {
-        void stage.loadHoloModel();
-        return;
-      }
+      const fallbackUrl =
+        filename === 'DeepSeek-chan.vrm'
+          ? 'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm'
+          : 'https://raw.githubusercontent.com/axAilotl/nous-girl-vrm/82d3e874855040748a150080c3c142b6cd8cfc01/Nous-Girl.vrm';
       fetch(`${apiBase}/models/file/${encodeURIComponent(filename)}`)
-        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('not found'))))
+        .then((r) => (r.ok ? r.arrayBuffer() : fetch(fallbackUrl).then((r2) => r2.arrayBuffer())))
         .then((buf) => stage.loadVrmBuffer(buf, modelName))
-        .catch(() => stage.loadHoloModel());
-    }, [kind, filename, modelName]);
+        .catch(() => {});
+    }, [filename, modelName]);
 
     useEffect(() => {
       stageRef.current?.updateState({

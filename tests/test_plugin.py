@@ -206,9 +206,24 @@ def test_dashboard_api_routes() -> None:
     assert dl_res.status_code == 200
     assert dl_res.content == glb_bytes
 
+    # Verify changing camera view via /perform preserves the selected model
+    perf_res = client.post(
+        "/api/plugins/hermes-psfn-avatar/perform",
+        json={
+            "camera": "full",
+            "active_model": {
+                "kind": "vrm",
+                "name": "test companion",
+                "filename": "test_companion.vrm",
+            },
+        },
+    )
+    assert perf_res.status_code == 200
+    assert perf_res.json()["state"]["active_model"]["filename"] == "test_companion.vrm"
+
     del_res = client.delete("/api/plugins/hermes-psfn-avatar/models/file/test_companion.vrm")
     assert del_res.status_code == 200
-    assert del_res.json()["state"]["active_model"]["filename"] == "DeepSeek-chan.vrm"
+    assert del_res.json()["state"]["active_model"]["filename"] == "Nous-Girl.vrm"
 
 
 if __name__ == "__main__":

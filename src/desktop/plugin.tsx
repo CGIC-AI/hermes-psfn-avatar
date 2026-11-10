@@ -111,8 +111,8 @@ const DEFAULT_BACKEND_STATE: BackendAvatarState = {
   muted: false,
   active_model: {
     kind: 'vrm',
-    name: 'DeepSeek-chan (VRM 1.0)',
-    filename: 'DeepSeek-chan.vrm',
+    name: 'Nous-Girl (Hermes · CC BY-NC-SA 4.0)',
+    filename: 'Nous-Girl.vrm',
   },
   psfn_lite: {
     connected: false,
@@ -150,6 +150,10 @@ interface SharedController {
   fetchModelBuffer(filename: string): Promise<ArrayBuffer>;
 }
 
+const NOUS_GIRL_URL =
+  'https://raw.githubusercontent.com/axAilotl/nous-girl-vrm/82d3e874855040748a150080c3c142b6cd8cfc01/Nous-Girl.vrm';
+const NOUS_GIRL_SHA256 =
+  'a99c587d26f02012079f8f8aa6a6cdda5c99da626eee01e91bb65fbf4def3747';
 const DEEPSEEK_CHAN_URL =
   'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm';
 const DEEPSEEK_CHAN_SHA256 =
@@ -204,8 +208,28 @@ function createSharedController(ctx: {
   storage: { get<T>(k: string, d: T): T; set(k: string, v: unknown): void };
   pet?: { say?: (text: string, opts?: { id?: string; ttlMs?: number }) => () => void };
 }): SharedController {
+  const storedActiveModel = ctx.storage.get<BackendAvatarState['active_model'] | null>(
+    'active_model',
+    null,
+  );
+  const initialActiveModel: BackendAvatarState['active_model'] =
+    storedActiveModel &&
+    storedActiveModel.kind !== 'holo' &&
+    typeof storedActiveModel.filename === 'string' &&
+    storedActiveModel.filename.length > 0
+      ? storedActiveModel
+      : DEFAULT_BACKEND_STATE.active_model;
+  let lockedActiveModel: BackendAvatarState['active_model'] | null =
+    storedActiveModel &&
+    storedActiveModel.kind !== 'holo' &&
+    typeof storedActiveModel.filename === 'string' &&
+    storedActiveModel.filename.length > 0
+      ? storedActiveModel
+      : null;
+
   let state: BackendAvatarState = {
     ...DEFAULT_BACKEND_STATE,
+    active_model: initialActiveModel,
     camera: ctx.storage.get<CameraPreset>('camera', 'bust'),
     corner: ctx.storage.get<BackendAvatarState['corner']>('corner', 'bottom-right'),
     scale: ctx.storage.get<number>('scale', 1.0),
@@ -213,18 +237,29 @@ function createSharedController(ctx: {
   };
   let models: ModelRecord[] = [
     {
-      id: 'file:DeepSeek-chan.vrm',
+      id: 'file:Nous-Girl.vrm',
       kind: 'vrm',
-      name: 'DeepSeek-chan (VRM 1.0)',
-      filename: 'DeepSeek-chan.vrm',
+      name: 'Nous-Girl (Hermes · CC BY-NC-SA 4.0)',
+      filename: 'Nous-Girl.vrm',
     },
     {
-      id: 'builtin:holo',
-      kind: 'holo',
-      name: 'Persephone Holo-Rig (Built-in)',
-      filename: null,
+      id: 'file:DeepSeek-chan.vrm',
+      kind: 'vrm',
+      name: 'DeepSeek-chan (CC BY-NC-SA 4.0)',
+      filename: 'DeepSeek-chan.vrm',
     },
   ];
+  if (
+    initialActiveModel.filename &&
+    !models.some((m) => m.filename === initialActiveModel.filename)
+  ) {
+    models.push({
+      id: `file:${initialActiveModel.filename}`,
+      kind: initialActiveModel.kind === 'glb' ? 'glb' : 'vrm',
+      name: initialActiveModel.name,
+      filename: initialActiveModel.filename,
+    });
+  }
   let clips: ClipManifestEntry[] = [];
   let localBuffer: { name: string; buffer: ArrayBuffer } | null = null;
   const listeners = new Set<() => void>();
@@ -233,14 +268,31 @@ function createSharedController(ctx: {
     for (const fn of listeners) fn();
   }
 
-  function mergeServerState(raw: unknown): void {
+  function mergeServerState(raw: unknown, allowModelOverride = false): void {
     if (!isRecord(raw)) return;
     const nextSeq = typeof raw.seq === 'number' ? raw.seq : state.seq + 1;
+    const rawActive = isRecord(raw.active_model)
+      ? (raw.active_model as BackendAvatarState['active_model'])
+      : null;
+    const validRawActive =
+      rawActive &&
+      rawActive.kind !== 'holo' &&
+      typeof rawActive.filename === 'string' &&
+      rawActive.filename.length > 0
+        ? rawActive
+        : null;
+    const nextActiveModel =
+      allowModelOverride && validRawActive
+        ? validRawActive
+        : lockedActiveModel ?? state.active_model ?? validRawActive ?? DEFAULT_BACKEND_STATE.active_model;
+
     state = {
       ...state,
       ...(raw as Partial<BackendAvatarState>),
+      active_model: nextActiveModel,
       seq: nextSeq,
     };
+    ctx.storage.set('active_model', state.active_model);
     ctx.storage.set('camera', state.camera);
     ctx.storage.set('corner', state.corner);
     ctx.storage.set('scale', state.scale);
@@ -255,8 +307,11 @@ function createSharedController(ctx: {
         state?: unknown;
         models?: ModelRecord[];
       }>('/state');
-      if (Array.isArray(res?.models)) models = res.models;
-      if (res?.state) mergeServerState(res.state);
+      if (Array.isArray(res?.models)) {
+        const filtered = res.models.filter((m) => m.kind !== 'holo' && Boolean(m.filename));
+        if (filtered.length > 0) models = filtered;
+      }
+      if (res?.state) mergeServerState(res.state, false);
     } catch {
       // Backend half is optional: standalone desktop-only installs still work in-memory.
     }
@@ -278,6 +333,7 @@ function createSharedController(ctx: {
     mergeServerState({
       ...state,
       ...patch,
+      active_model: state.active_model,
       mood: nextMood,
       emotional_base: nextBase,
       speech_text: nextSpeechText,
@@ -292,41 +348,53 @@ function createSharedController(ctx: {
     try {
       const res = await ctx.rest<{ ok?: boolean; state?: unknown }>('/perform', {
         method: 'POST',
-        body: patch,
+        body: { ...patch, active_model: state.active_model },
       });
-      if (res?.state) mergeServerState(res.state);
+      if (res?.state) mergeServerState(res.state, false);
     } catch {
       // Keep optimistic state when backend half is offline
     }
   }
 
   async function selectModel(idOrFilename: string): Promise<void> {
-    if (idOrFilename === 'builtin:holo') {
-      localBuffer = null;
-      mergeServerState({
+    const cleanFile = idOrFilename.replace(/^file:/, '');
+    const found = models.find((m) => m.id === idOrFilename || m.filename === cleanFile);
+    const nextActive: BackendAvatarState['active_model'] =
+      found && found.filename
+        ? {
+            kind: found.kind === 'glb' ? 'glb' : 'vrm',
+            name: found.name,
+            filename: found.filename,
+          }
+        : cleanFile === 'DeepSeek-chan.vrm'
+          ? {
+              kind: 'vrm',
+              name: 'DeepSeek-chan (CC BY-NC-SA 4.0)',
+              filename: 'DeepSeek-chan.vrm',
+            }
+          : {
+              kind: cleanFile.toLowerCase().endsWith('.glb') ? 'glb' : 'vrm',
+              name:
+                cleanFile === 'Nous-Girl.vrm'
+                  ? 'Nous-Girl (Hermes · CC BY-NC-SA 4.0)'
+                  : cleanFile.replace(/\.(?:vrm|glb)$/i, ''),
+              filename: cleanFile || 'Nous-Girl.vrm',
+            };
+    lockedActiveModel = nextActive;
+    ctx.storage.set('active_model', nextActive);
+    mergeServerState(
+      {
         ...state,
-        active_model: {
-          kind: 'holo',
-          name: 'Persephone Holo-Rig (Built-in)',
-          filename: null,
-        },
-      });
-    } else if (idOrFilename === 'file:DeepSeek-chan.vrm' || idOrFilename === 'DeepSeek-chan.vrm') {
-      mergeServerState({
-        ...state,
-        active_model: {
-          kind: 'vrm',
-          name: 'DeepSeek-chan (VRM 1.0)',
-          filename: 'DeepSeek-chan.vrm',
-        },
-      });
-    }
+        active_model: nextActive,
+      },
+      true,
+    );
     try {
       const res = await ctx.rest<{ ok?: boolean; state?: unknown }>('/models/select', {
         method: 'POST',
-        body: { id: idOrFilename },
+        body: { id: idOrFilename, filename: nextActive.filename },
       });
-      if (res?.state) mergeServerState(res.state);
+      if (res?.state) mergeServerState(res.state, true);
     } catch {
       // Offline fallback
     }
@@ -336,15 +404,34 @@ function createSharedController(ctx: {
     validateLocalAvatarFile(file);
     const buffer = await file.arrayBuffer();
     localBuffer = { name: file.name, buffer };
+    await writeIdbModelCache(file.name, buffer);
     const ext = file.name.toLowerCase().endsWith('.vrm') ? 'vrm' : 'glb';
-    mergeServerState({
-      ...state,
-      active_model: {
-        kind: ext,
-        name: file.name.replace(/\.(?:vrm|glb)$/i, ''),
-        filename: file.name,
+    const nextActive: BackendAvatarState['active_model'] = {
+      kind: ext,
+      name: file.name.replace(/\.(?:vrm|glb)$/i, ''),
+      filename: file.name,
+    };
+    if (!models.some((m) => m.filename === file.name)) {
+      models = [
+        ...models,
+        {
+          id: `file:${file.name}`,
+          kind: ext,
+          name: nextActive.name,
+          filename: file.name,
+          size_bytes: file.size,
+        },
+      ];
+    }
+    lockedActiveModel = nextActive;
+    ctx.storage.set('active_model', nextActive);
+    mergeServerState(
+      {
+        ...state,
+        active_model: nextActive,
       },
-    });
+      true,
+    );
   }
 
   async function uploadModelFile(file: File): Promise<void> {
@@ -366,10 +453,13 @@ function createSharedController(ctx: {
         method: 'POST',
         body: { filename: file.name, data_base64 },
       });
-      if (Array.isArray(res?.models)) models = res.models;
-      if (res?.state) mergeServerState(res.state);
+      if (Array.isArray(res?.models)) {
+        const filtered = res.models.filter((m) => m.kind !== 'holo' && Boolean(m.filename));
+        if (filtered.length > 0) models = filtered;
+      }
+      if (res?.state) mergeServerState(res.state, false);
     } catch {
-      // Local session buffer is already active even if backend upload isn't mounted
+      // Local session buffer + IndexedDB cache are already active even if backend upload isn't mounted
     }
   }
 
@@ -435,8 +525,26 @@ function createSharedController(ctx: {
       const cached = await readIdbModelCache(filename);
       if (cached) return cached;
 
-      if (filename === 'DeepSeek-chan.vrm') {
-        const resp = await fetch(DEEPSEEK_CHAN_URL);
+      try {
+        const localResp = await fetch(
+          `/api/plugins/${PLUGIN_ID}/models/file/${encodeURIComponent(filename)}`,
+        );
+        if (localResp.ok) {
+          const buf = await localResp.arrayBuffer();
+          await writeIdbModelCache(filename, buf);
+          return buf;
+        }
+      } catch {
+        // Fall through to pinned upstream CDN if backend route is unavailable
+      }
+
+      const remoteCatalog: Record<string, { url: string; sha256: string }> = {
+        'Nous-Girl.vrm': { url: NOUS_GIRL_URL, sha256: NOUS_GIRL_SHA256 },
+        'DeepSeek-chan.vrm': { url: DEEPSEEK_CHAN_URL, sha256: DEEPSEEK_CHAN_SHA256 },
+      };
+      const remoteEntry = remoteCatalog[filename];
+      if (remoteEntry) {
+        const resp = await fetch(remoteEntry.url);
         if (resp.ok) {
           const buf = await resp.arrayBuffer();
           if (typeof crypto !== 'undefined' && crypto.subtle) {
@@ -444,8 +552,8 @@ function createSharedController(ctx: {
             const hex = Array.from(new Uint8Array(hashBuf))
               .map((b) => b.toString(16).padStart(2, '0'))
               .join('');
-            if (hex !== DEEPSEEK_CHAN_SHA256) {
-              throw new Error('DeepSeek-chan.vrm SHA-256 verification failed');
+            if (hex !== remoteEntry.sha256) {
+              throw new Error(`${filename} SHA-256 verification failed`);
             }
           }
           await writeIdbModelCache(filename, buf);
@@ -453,13 +561,7 @@ function createSharedController(ctx: {
         }
       }
 
-      const resp = await fetch(
-        `/api/plugins/${PLUGIN_ID}/models/file/${encodeURIComponent(filename)}`,
-      );
-      if (!resp.ok) throw new Error(`Failed to fetch model ${filename}`);
-      const buf = await resp.arrayBuffer();
-      await writeIdbModelCache(filename, buf);
-      return buf;
+      throw new Error(`Failed to fetch model ${filename}`);
     })().catch((err) => {
       memoryModelCache.delete(filename);
       throw err;
@@ -604,34 +706,34 @@ function AvatarStageView({
   }, [controller]);
 
   // Reload model when active_model changes
-  const activeKind = state.active_model?.kind ?? 'holo';
-  const activeFilename = state.active_model?.filename ?? null;
-  const activeName = state.active_model?.name ?? 'Holo-Rig';
+  const activeFilename = state.active_model?.filename || 'Nous-Girl.vrm';
+  const activeName = state.active_model?.name || 'Nous-Girl (Hermes · CC BY-NC-SA 4.0)';
 
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
     const local = controller.getLocalBuffer();
-    if (activeKind === 'holo' || !activeFilename) {
-      void stage.loadHoloModel();
-      return;
-    }
     if (local && local.name === activeFilename) {
       void stage.loadVrmBuffer(local.buffer, activeName).catch((err) => {
         setStatusInfo({
           format: 'Error',
-          state: 'Fallback to Holo-Rig',
+          state: 'Model Load Failed',
           error: err instanceof Error ? err.message : String(err),
         });
-        void stage.loadHoloModel();
       });
       return;
     }
     void controller
       .fetchModelBuffer(activeFilename)
       .then((buf) => stage.loadVrmBuffer(buf, activeName))
-      .catch(() => stage.loadHoloModel());
-  }, [controller, activeKind, activeFilename, activeName]);
+      .catch((err) => {
+        setStatusInfo({
+          format: 'Error',
+          state: 'Model Load Failed',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+  }, [controller, activeFilename, activeName]);
 
   // Push playback state updates into the 3D stage
   useEffect(() => {
@@ -1367,7 +1469,7 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
           <div className="rounded-lg border border-(--ui-stroke-secondary) p-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-(--ui-text-secondary)">
-                1. Avatar Model (.vrm / .glb or Built-in Holo-Rig)
+                1. Avatar Model (.vrm / .glb)
               </span>
               <label className="cursor-pointer rounded border border-(--ui-accent) px-2.5 py-1 text-xs font-medium text-(--ui-accent)">
                 Load .VRM / .GLB File
@@ -1384,9 +1486,9 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
             )}
             <div className="flex flex-wrap gap-1.5">
               {models.map((m) => {
-                const isSelected =
-                  (m.kind === 'holo' && state.active_model?.kind === 'holo') ||
-                  (m.filename && state.active_model?.filename === m.filename);
+                const isSelected = Boolean(
+                  m.filename && state.active_model?.filename === m.filename,
+                );
                 return (
                   <button
                     className="rounded border border-(--ui-stroke-secondary) px-2.5 py-1 text-xs"
@@ -1402,6 +1504,10 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
                   </button>
                 );
               })}
+            </div>
+            <div className="mt-2 text-[11px] text-(--ui-text-tertiary)">
+              Default: <strong>Nous-Girl</strong> (Hermes / PSFN original assembly, CC BY-NC-SA 4.0) ·{' '}
+              <strong>DeepSeek-chan</strong> (character 溟月 by 上善无形 · maid design by ZipZipPipe · 3D model by ニケ, CC BY-NC-SA 4.0).
             </div>
           </div>
 

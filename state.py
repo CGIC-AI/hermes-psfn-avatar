@@ -199,6 +199,20 @@ def models_dir() -> Path:
     return d
 
 
+def shared_models_dir() -> Path:
+    hermes_home = Path.home() / ".hermes"
+    return hermes_home / "plugin-data" / PLUGIN_ID / "models"
+
+
+def find_model_file(filename: str) -> Path | None:
+    if not _SAFE_FILENAME_RE.match(filename) or ".." in filename:
+        return None
+    for candidate in (models_dir() / filename, shared_models_dir() / filename):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def state_file() -> Path:
     return _data_root() / "avatar_state.json"
 
@@ -223,8 +237,8 @@ def default_state() -> dict[str, Any]:
         "muted": False,
         "active_model": {
             "kind": "vrm",
-            "name": "DeepSeek-chan (VRM 1.0)",
-            "filename": "DeepSeek-chan.vrm",
+            "name": "Nous-Girl (Hermes · CC BY-NC-SA 4.0)",
+            "filename": "Nous-Girl.vrm",
         },
         "psfn_lite": {
             "connected": False,
@@ -309,6 +323,7 @@ def apply_performance(
     vad: dict[str, float] | None = None,
     clip: str | None = None,
     psfn_lite: dict[str, Any] | None = None,
+    active_model: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate and apply an avatar performance update, returning the updated state."""
     current = read_state()
@@ -367,6 +382,13 @@ def apply_performance(
     if psfn_lite is not None:
         patch["psfn_lite"] = psfn_lite
 
+    if isinstance(active_model, dict):
+        fname = str(active_model.get("filename") or "").strip()
+        if fname and _SAFE_FILENAME_RE.match(fname):
+            kind = str(active_model.get("kind") or ("glb" if fname.lower().endswith(".glb") else "vrm"))
+            name = str(active_model.get("name") or Path(fname).stem)
+            patch["active_model"] = {"kind": kind, "name": name, "filename": fname}
+
     return write_state(patch)
 
 
@@ -414,26 +436,28 @@ def infer_turn_emote(reply_text: str) -> dict[str, str | None]:
 
 
 def list_models() -> list[dict[str, Any]]:
-    """List available avatar models (built-in procedural Holo-Rig plus uploaded VRM/GLB files)."""
+    """List available VRM/GLB avatar models (bundled Nous-Girl default, DeepSeek-chan, and uploaded files)."""
     items: list[dict[str, Any]] = [
+        {
+            "id": "file:Nous-Girl.vrm",
+            "kind": "vrm",
+            "name": "Nous-Girl (Hermes · CC BY-NC-SA 4.0)",
+            "filename": "Nous-Girl.vrm",
+            "size_bytes": 11490464,
+        },
         {
             "id": "file:DeepSeek-chan.vrm",
             "kind": "vrm",
-            "name": "DeepSeek-chan (VRM 1.0)",
+            "name": "DeepSeek-chan (CC BY-NC-SA 4.0)",
             "filename": "DeepSeek-chan.vrm",
             "size_bytes": 33616628,
         },
-        {
-            "id": "builtin:holo",
-            "kind": "holo",
-            "name": "Persephone Holo-Rig (Built-in)",
-            "filename": None,
-            "size_bytes": 0,
-        },
     ]
+    seen = {"Nous-Girl.vrm", "DeepSeek-chan.vrm"}
     mdir = models_dir()
     for path in sorted(mdir.iterdir()):
-        if path.is_file() and _SAFE_FILENAME_RE.match(path.name) and path.name != "DeepSeek-chan.vrm":
+        if path.is_file() and _SAFE_FILENAME_RE.match(path.name) and path.name not in seen:
+            seen.add(path.name)
             ext = path.suffix.lower().lstrip(".")
             items.append(
                 {
