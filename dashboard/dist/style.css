@@ -5,12 +5,12 @@
   user-select: none;
 }
 .psfn-vrm-overlay.corner-bottom-right {
-  right: 20px;
-  bottom: 24px;
+  right: 16px;
+  bottom: 148px;
 }
 .psfn-vrm-overlay.corner-bottom-left {
-  left: 20px;
-  bottom: 24px;
+  left: 16px;
+  bottom: 148px;
 }
 .psfn-vrm-overlay.corner-top-right {
   right: 20px;

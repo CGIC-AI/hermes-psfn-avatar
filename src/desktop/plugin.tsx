@@ -387,11 +387,13 @@ function AvatarStageView({
   heightPx,
   interactiveTouch = true,
   compactHud = true,
+  onOverlayDragDelta,
 }: {
   controller: SharedController;
   heightPx: number;
   interactiveTouch?: boolean;
   compactHud?: boolean;
+  onOverlayDragDelta?: (dx: number, dy: number, commit: boolean) => void;
 }) {
   const state = useControllerState(controller);
   const busy = useValue(host.state.busy);
@@ -520,20 +522,40 @@ function AvatarStageView({
       x: e.clientX,
       y: e.clientY,
     };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
   }, []);
+
+  const onRegionPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const start = pointerStartRef.current;
+      if (!start || start.id !== e.pointerId) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (Math.hypot(dx, dy) >= 6 && onOverlayDragDelta && !e.shiftKey) {
+        onOverlayDragDelta(dx, dy, false);
+      }
+    },
+    [onOverlayDragDelta],
+  );
 
   const onRegionPointerUp = useCallback(
     (region: TouchRegion, e: React.PointerEvent) => {
       const start = pointerStartRef.current;
       if (!start || start.id !== e.pointerId || start.region !== region) return;
       pointerStartRef.current = null;
+      e.currentTarget.releasePointerCapture?.(e.pointerId);
       const endedAt = Date.now();
       const durationMs = Math.max(0, endedAt - start.atMs);
       const deltaX = e.clientX - start.x;
       const deltaY = e.clientY - start.y;
       const dist = Math.hypot(deltaX, deltaY);
 
-      if (dist >= MOVE_GESTURE_PX && region !== 'head') {
+      if (dist >= 6 && onOverlayDragDelta && !e.shiftKey) {
+        onOverlayDragDelta(deltaX, deltaY, true);
+        return;
+      }
+
+      if (dist >= MOVE_GESTURE_PX && (e.shiftKey || !onOverlayDragDelta) && region !== 'head') {
         stageRef.current?.nudgeOrbit(deltaX * 0.008, deltaY * 0.006);
         return;
       }
@@ -559,7 +581,7 @@ function AvatarStageView({
       });
       setTimeout(() => setTouchBanner(null), 1600);
     },
-    [controller],
+    [controller, onOverlayDragDelta],
   );
 
   return (
@@ -584,16 +606,16 @@ function AvatarStageView({
         style={{
           display: 'block',
           height: '100%',
-          pointerEvents: 'auto',
+          pointerEvents: compactHud ? 'none' : 'auto',
           width: '100%',
         }}
       />
 
-      {/* Invisible anatomical touch hitboxes over the upper-body VTuber frame */}
+      {/* Narrow anatomical silhouette hitboxes so surrounding transparent space clicks through */}
       {interactiveTouch && (
         <div
           style={{
-            inset: '6% 18% 18% 18%',
+            inset: '8% 26% 16% 26%',
             pointerEvents: 'none',
             position: 'absolute',
           }}
@@ -601,55 +623,58 @@ function AvatarStageView({
           <button
             aria-label="Headpat avatar"
             onPointerDown={(e) => onRegionPointerDown('head', e)}
+            onPointerMove={onRegionPointerMove}
             onPointerUp={(e) => onRegionPointerUp('head', e)}
             style={{
               background: 'transparent',
               border: 'none',
-              cursor: 'pointer',
+              cursor: 'grab',
               height: '32%',
-              left: '15%',
+              left: '12%',
               pointerEvents: 'auto',
               position: 'absolute',
               top: 0,
-              width: '70%',
+              width: '76%',
             }}
-            title="Tap for headpat · Drag to pet"
+            title="Tap for headpat · Drag to move avatar"
             type="button"
           />
           <button
             aria-label="Boop avatar cheek"
             onPointerDown={(e) => onRegionPointerDown('cheek', e)}
+            onPointerMove={onRegionPointerMove}
             onPointerUp={(e) => onRegionPointerUp('cheek', e)}
             style={{
               background: 'transparent',
               border: 'none',
-              cursor: 'pointer',
+              cursor: 'grab',
               height: '24%',
-              left: '20%',
+              left: '16%',
               pointerEvents: 'auto',
               position: 'absolute',
               top: '32%',
-              width: '60%',
+              width: '68%',
             }}
-            title="Tap cheek to boop"
+            title="Tap cheek to boop · Drag to move avatar"
             type="button"
           />
           <button
             aria-label="Interact with avatar torso"
             onPointerDown={(e) => onRegionPointerDown('body', e)}
+            onPointerMove={onRegionPointerMove}
             onPointerUp={(e) => onRegionPointerUp('body', e)}
             style={{
               background: 'transparent',
               border: 'none',
               cursor: 'grab',
               height: '44%',
-              left: '10%',
+              left: '8%',
               pointerEvents: 'auto',
               position: 'absolute',
               top: '56%',
-              width: '80%',
+              width: '84%',
             }}
-            title="Tap/hold for hug · Drag horizontally to rotate view"
+            title="Drag to move avatar · Tap for hug · Shift+drag to orbit 3D view"
             type="button"
           />
         </div>
@@ -853,24 +878,25 @@ function StatusbarAndFloatingOverlay({
 }) {
   const state = useControllerState(controller);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>(() =>
-    storage.get('dragOffset', { x: 0, y: 0 }),
+    storage.get('dragOffsetV2', { x: 0, y: 0 }),
   );
-  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(
-    null,
-  );
+  const [liveDelta, setLiveDelta] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  const widthPx = Math.round(230 * (state.scale || 1));
-  const heightPx = Math.round(285 * (state.scale || 1));
+  const widthPx = Math.round(215 * (state.scale || 1));
+  const heightPx = Math.round(265 * (state.scale || 1));
 
+  const dx = dragOffset.x + liveDelta.x;
+  const dy = dragOffset.y + liveDelta.y;
+
+  // Default bottom is 148px so the avatar sits perched ABOVE the chat composer input bar, never covering it.
   const anchorStyle: React.CSSProperties =
     state.corner === 'bottom-left'
-      ? { left: `${20 + dragOffset.x}px`, bottom: `${34 - dragOffset.y}px` }
+      ? { left: `${16 + dx}px`, bottom: `${148 - dy}px` }
       : state.corner === 'top-right'
-        ? { right: `${20 - dragOffset.x}px`, top: `${48 + dragOffset.y}px` }
+        ? { right: `${16 - dx}px`, top: `${46 + dy}px` }
         : state.corner === 'top-left'
-          ? { left: `${20 + dragOffset.x}px`, top: `${48 + dragOffset.y}px` }
-          : { right: `${20 - dragOffset.x}px`, bottom: `${34 - dragOffset.y}px` };
-
+          ? { left: `${16 + dx}px`, top: `${46 + dy}px` }
+          : { right: `${16 - dx}px`, bottom: `${148 - dy}px` };
   const cycleMode = () => {
     const next =
       state.mode === 'floating' ? 'pane' : state.mode === 'pane' ? 'hidden' : 'floating';
@@ -905,56 +931,21 @@ function StatusbarAndFloatingOverlay({
             zIndex: 55,
           }}
         >
-          {/* Subtle top drag handle pill */}
-          <div
-            onDoubleClick={() => {
-              setDragOffset({ x: 0, y: 0 });
-              storage.set('dragOffset', { x: 0, y: 0 });
-            }}
-            onPointerDown={(e) => {
-              dragRef.current = {
-                startX: e.clientX,
-                startY: e.clientY,
-                origX: dragOffset.x,
-                origY: dragOffset.y,
-              };
-              e.currentTarget.setPointerCapture(e.pointerId);
-            }}
-            onPointerMove={(e) => {
-              if (!dragRef.current) return;
-              const next = {
-                x: dragRef.current.origX + (e.clientX - dragRef.current.startX),
-                y: dragRef.current.origY + (e.clientY - dragRef.current.startY),
-              };
-              setDragOffset(next);
-            }}
-            onPointerUp={(e) => {
-              if (!dragRef.current) return;
-              dragRef.current = null;
-              storage.set('dragOffset', dragOffset);
-              e.currentTarget.releasePointerCapture?.(e.pointerId);
-            }}
-            style={{
-              background: 'var(--ui-stroke-secondary, rgba(148, 163, 184, 0.35))',
-              borderRadius: '999px',
-              cursor: 'grab',
-              height: '5px',
-              left: '50%',
-              pointerEvents: 'auto',
-              position: 'absolute',
-              top: '0px',
-              transform: 'translateX(-50%)',
-              width: '38px',
-              zIndex: 6,
-            }}
-            title="Drag to move avatar overlay · Double-click to reset position"
-          />
-
           <AvatarStageView
             compactHud
             controller={controller}
             heightPx={heightPx}
             interactiveTouch
+            onOverlayDragDelta={(deltaX, deltaY, commit) => {
+              if (commit) {
+                const next = { x: dragOffset.x + deltaX, y: dragOffset.y + deltaY };
+                setDragOffset(next);
+                setLiveDelta({ x: 0, y: 0 });
+                storage.set('dragOffsetV2', next);
+              } else {
+                setLiveDelta({ x: deltaX, y: deltaY });
+              }
+            }}
           />
         </div>
       )}
