@@ -15,7 +15,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  COMPOSER_AREAS,
   PALETTE_AREA,
   PANES_AREA,
   ROUTES_AREA,
@@ -324,10 +323,32 @@ function createSharedController(ctx: {
   }
   let clips: ClipManifestEntry[] = [];
   let localBuffer: { name: string; buffer: ArrayBuffer } | null = null;
+  let emoteDecayTimer: ReturnType<typeof setTimeout> | null = null;
   const listeners = new Set<() => void>();
 
   function emit(): void {
     for (const fn of listeners) fn();
+  }
+
+  function scheduleEmoteDecay(): void {
+    if (emoteDecayTimer !== null) {
+      clearTimeout(emoteDecayTimer);
+      emoteDecayTimer = null;
+    }
+    if (state.mood !== 'neutral' || state.reaction !== null || state.speech_text !== '') {
+      emoteDecayTimer = setTimeout(() => {
+        emoteDecayTimer = null;
+        state = {
+          ...state,
+          mood: 'neutral',
+          emotional_base: 'neutral',
+          reaction: null,
+          speech_text: '',
+          seq: state.seq + 1,
+        };
+        emit();
+      }, 3200);
+    }
   }
 
   function mergeServerState(raw: unknown, allowLayoutOverride = false): void {
@@ -378,6 +399,7 @@ function createSharedController(ctx: {
     writePersistent(ctx.storage, 'corner', state.corner);
     writePersistent(ctx.storage, 'scale', state.scale);
     writePersistent(ctx.storage, 'mode', state.mode);
+    scheduleEmoteDecay();
     emit();
   }
 
@@ -749,6 +771,7 @@ function AvatarStageView({
     state: 'Idle',
   });
   const [touchBanner, setTouchBanner] = useState<string | null>(null);
+  const touchBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hovered, setHovered] = useState(false);
   const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -774,6 +797,9 @@ function AvatarStageView({
     return () => {
       if (hoverLeaveTimerRef.current !== null) {
         clearTimeout(hoverLeaveTimerRef.current);
+      }
+      if (touchBannerTimerRef.current !== null) {
+        clearTimeout(touchBannerTimerRef.current);
       }
     };
   }, []);
@@ -975,13 +1001,18 @@ function AvatarStageView({
       if (!interaction) return;
       const reactionCopy = REACTION_COPY[interaction.kind as TouchStimulusKind];
       const mapped = TOUCH_TO_REACTION_CLIP[interaction.kind as TouchStimulusKind];
+      if (touchBannerTimerRef.current !== null) {
+        clearTimeout(touchBannerTimerRef.current);
+      }
       setTouchBanner(reactionCopy);
       void controller.perform({
         mood: mapped.mood,
         reaction: mapped.reaction,
-        say: reactionCopy,
       });
-      setTimeout(() => setTouchBanner(null), 1600);
+      touchBannerTimerRef.current = setTimeout(() => {
+        touchBannerTimerRef.current = null;
+        setTouchBanner(null);
+      }, 2200);
     },
     [canDragOverlay, controller, onOverlayDragDelta],
   );
@@ -1159,8 +1190,8 @@ function AvatarStageView({
         </div>
       )}
 
-      {/* Speech / Activity Bubble */}
-      {(state.speech_text || effectiveActivity !== 'idle') && ! touchBanner && (
+      {/* Speech / Activity Bubble (only visible during active thinking/tool use or brief speech text) */}
+      {(state.speech_text || effectiveActivity !== 'idle') && !touchBanner && (
         <div
           style={{
             background: 'var(--ui-surface-elevated, rgba(15, 23, 42, 0.86))',
@@ -1178,18 +1209,19 @@ function AvatarStageView({
             zIndex: 3,
           }}
         >
-          <div
-            style={{
-              color: 'var(--ui-accent, #2dd4bf)',
-              fontSize: '9.5px',
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-            }}
-          >
-            {effectiveActivity} · {state.mood}
-            {state.psfn_lite?.connected ? ' · PSFN' : ''}
-          </div>
+          {effectiveActivity !== 'idle' && (
+            <div
+              style={{
+                color: 'var(--ui-accent, #2dd4bf)',
+                fontSize: '9.5px',
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              {effectiveActivity}
+            </div>
+          )}
           {state.speech_text && (
             <div
               style={{
@@ -1359,12 +1391,12 @@ function AvatarStageView({
 function StatusbarAndFloatingOverlay({
   controller,
   storage,
-  compactButton = false,
+  showButton = true,
   renderOverlay = false,
 }: {
   controller: SharedController;
   storage: { get<T>(k: string, d: T): T; set(k: string, v: unknown): void };
-  compactButton?: boolean;
+  showButton?: boolean;
   renderOverlay?: boolean;
 }) {
   const state = useControllerState(controller);
@@ -1399,18 +1431,20 @@ function StatusbarAndFloatingOverlay({
 
   return (
     <>
-      <button
-        className="px-1.5 text-[0.6875rem] text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
-        onClick={cycleMode}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          host.navigate('/vrm-avatar');
-        }}
-        title="Click: cycle Floating / Pane / Hidden · Right-click: open VRM Studio"
-        type="button"
-      >
-        {compactButton ? `🎭 ${state.mood}` : `🎭 ${state.mood} (${state.mode})`}
-      </button>
+      {showButton && (
+        <button
+          className="px-1.5 text-[0.6875rem] text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
+          onClick={cycleMode}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            host.navigate('/vrm-avatar');
+          }}
+          title="Click: cycle Floating / Docked / Hidden · Right-click: open VRM Avatar Studio"
+          type="button"
+        >
+          VRM Avatar
+        </button>
+      )}
 
       {renderOverlay && state.mode === 'floating' && (
         <div
@@ -1741,7 +1775,6 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
                     void controller.perform({
                       mood: r.mood,
                       reaction: r.reaction,
-                      say: r.label,
                     })
                   }
                   type="button"
@@ -1915,21 +1948,9 @@ const plugin = {
         order: 95,
         render: () => (
           <StatusbarAndFloatingOverlay
-            compactButton
             controller={controller}
             renderOverlay
-            storage={ctx.storage}
-          />
-        ),
-      },
-      {
-        id: 'composer-overlay',
-        area: COMPOSER_AREAS.actions,
-        order: 95,
-        render: () => (
-          <StatusbarAndFloatingOverlay
-            compactButton
-            controller={controller}
+            showButton={false}
             storage={ctx.storage}
           />
         ),
@@ -1939,7 +1960,12 @@ const plugin = {
         area: STATUSBAR_AREAS.right,
         order: 115,
         render: () => (
-          <StatusbarAndFloatingOverlay controller={controller} storage={ctx.storage} />
+          <StatusbarAndFloatingOverlay
+            controller={controller}
+            renderOverlay={false}
+            showButton
+            storage={ctx.storage}
+          />
         ),
       },
       {
