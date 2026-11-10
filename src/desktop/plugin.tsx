@@ -524,6 +524,10 @@ function AvatarStageView({
     atMs: number;
     x: number;
     y: number;
+    lastX: number;
+    lastY: number;
+    wantOrbit: boolean;
+    mode: 'undecided' | 'orbit' | 'move-window';
   } | null>(null);
   const lastTapAtRef = useRef<Record<TouchRegion, number>>({
     head: -Infinity,
@@ -657,34 +661,75 @@ function AvatarStageView({
     state.muted,
   ]);
 
-  const onRegionPointerDown = useCallback((region: TouchRegion, e: React.PointerEvent) => {
-    pointerStartRef.current = {
-      id: e.pointerId,
-      region,
-      atMs: Date.now(),
-      x: e.clientX,
-      y: e.clientY,
-    };
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-  }, []);
+  const onRegionPointerDown = useCallback(
+    (region: TouchRegion, e: React.PointerEvent) => {
+      e.preventDefault();
+      const wantOrbit =
+        e.shiftKey || e.button === 2 || e.button === 1 || !onOverlayDragDelta;
+      pointerStartRef.current = {
+        id: e.pointerId,
+        region,
+        atMs: Date.now(),
+        x: e.clientX,
+        y: e.clientY,
+        lastX: e.clientX,
+        lastY: e.clientY,
+        wantOrbit,
+        mode: wantOrbit ? 'orbit' : 'undecided',
+      };
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    },
+    [onOverlayDragDelta],
+  );
 
   const onRegionPointerMove = useCallback(
     (e: React.PointerEvent) => {
       const start = pointerStartRef.current;
       if (!start || start.id !== e.pointerId) return;
-      const dx = e.clientX - start.x;
-      const dy = e.clientY - start.y;
-      if (Math.hypot(dx, dy) >= 6 && onOverlayDragDelta && !e.shiftKey) {
-        onOverlayDragDelta(dx, dy, false);
+      const stepDx = e.clientX - start.lastX;
+      const stepDy = e.clientY - start.lastY;
+      start.lastX = e.clientX;
+      start.lastY = e.clientY;
+
+      const totalDx = e.clientX - start.x;
+      const totalDy = e.clientY - start.y;
+      const totalDist = Math.hypot(totalDx, totalDy);
+
+      if (
+        start.mode === 'undecided' &&
+        (e.shiftKey || (e.buttons & 2) !== 0 || (e.buttons & 4) !== 0 || !onOverlayDragDelta)
+      ) {
+        start.wantOrbit = true;
+        start.mode = 'orbit';
+      } else if (start.mode === 'undecided' && totalDist >= 4) {
+        start.mode = start.wantOrbit ? 'orbit' : 'move-window';
+      }
+
+      if (start.mode === 'orbit') {
+        if (stepDx !== 0 || stepDy !== 0) {
+          stageRef.current?.nudgeOrbit(-stepDx * 0.012, stepDy * 0.009);
+        }
+        return;
+      }
+
+      if (start.mode === 'move-window' && onOverlayDragDelta) {
+        onOverlayDragDelta(totalDx, totalDy, false);
       }
     },
     [onOverlayDragDelta],
   );
 
+  const onRegionPointerCancel = useCallback((e: React.PointerEvent) => {
+    const start = pointerStartRef.current;
+    if (!start || start.id !== e.pointerId) return;
+    pointerStartRef.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  }, []);
+
   const onRegionPointerUp = useCallback(
     (region: TouchRegion, e: React.PointerEvent) => {
       const start = pointerStartRef.current;
-      if (!start || start.id !== e.pointerId || start.region !== region) return;
+      if (!start || start.id !== e.pointerId) return;
       pointerStartRef.current = null;
       e.currentTarget.releasePointerCapture?.(e.pointerId);
       const endedAt = Date.now();
@@ -693,13 +738,12 @@ function AvatarStageView({
       const deltaY = e.clientY - start.y;
       const dist = Math.hypot(deltaX, deltaY);
 
-      if (dist >= 6 && onOverlayDragDelta && !e.shiftKey) {
-        onOverlayDragDelta(deltaX, deltaY, true);
+      if (start.mode === 'orbit' || start.wantOrbit || e.shiftKey || e.button !== 0) {
         return;
       }
 
-      if (dist >= MOVE_GESTURE_PX && (e.shiftKey || !onOverlayDragDelta) && region !== 'head') {
-        stageRef.current?.nudgeOrbit(deltaX * 0.008, deltaY * 0.006);
+      if (start.mode === 'move-window' && onOverlayDragDelta) {
+        onOverlayDragDelta(deltaX, deltaY, true);
         return;
       }
 
@@ -729,17 +773,17 @@ function AvatarStageView({
 
   return (
     <div
+      onContextMenu={(e) => e.preventDefault()}
       onMouseEnter={handleHoverEnter}
       onMouseLeave={handleHoverLeave}
       onWheel={(e) => {
-        if (e.altKey || !compactHud) {
-          e.preventDefault();
-          stageRef.current?.nudgeZoom(e.deltaY > 0 ? 1.08 : 0.92);
-        }
+        e.preventDefault();
+        stageRef.current?.nudgeZoom(e.deltaY > 0 ? 1.08 : 0.92);
       }}
       style={{
         height: `${heightPx}px`,
         position: 'relative',
+        touchAction: 'none',
         width: '100%',
       }}
     >
@@ -758,8 +802,10 @@ function AvatarStageView({
       {compactHud && hovered && (
         <div
           aria-hidden="true"
+          onContextMenu={(e) => e.preventDefault()}
           onMouseEnter={handleHoverEnter}
           onMouseLeave={handleHoverLeave}
+          onPointerCancel={onRegionPointerCancel}
           onPointerDown={(e) => onRegionPointerDown('body', e)}
           onPointerMove={onRegionPointerMove}
           onPointerUp={(e) => onRegionPointerUp('body', e)}
@@ -771,6 +817,7 @@ function AvatarStageView({
             position: 'absolute',
             right: '2%',
             top: '30%',
+            touchAction: 'none',
             zIndex: 1,
           }}
         />
@@ -788,8 +835,10 @@ function AvatarStageView({
         >
           <button
             aria-label="Headpat avatar"
+            onContextMenu={(e) => e.preventDefault()}
             onMouseEnter={handleHoverEnter}
             onMouseLeave={handleHoverLeave}
+            onPointerCancel={onRegionPointerCancel}
             onPointerDown={(e) => onRegionPointerDown('head', e)}
             onPointerMove={onRegionPointerMove}
             onPointerUp={(e) => onRegionPointerUp('head', e)}
@@ -802,15 +851,18 @@ function AvatarStageView({
               pointerEvents: 'auto',
               position: 'absolute',
               top: 0,
+              touchAction: 'none',
               width: '80%',
             }}
-            title="Tap for headpat · Drag to move avatar"
+            title="Tap for headpat · Drag to move · Shift+drag or Right-drag to orbit 3D view"
             type="button"
           />
           <button
             aria-label="Boop avatar cheek"
+            onContextMenu={(e) => e.preventDefault()}
             onMouseEnter={handleHoverEnter}
             onMouseLeave={handleHoverLeave}
+            onPointerCancel={onRegionPointerCancel}
             onPointerDown={(e) => onRegionPointerDown('cheek', e)}
             onPointerMove={onRegionPointerMove}
             onPointerUp={(e) => onRegionPointerUp('cheek', e)}
@@ -823,15 +875,18 @@ function AvatarStageView({
               pointerEvents: 'auto',
               position: 'absolute',
               top: '30%',
+              touchAction: 'none',
               width: '72%',
             }}
-            title="Tap cheek to boop · Drag to move avatar"
+            title="Tap cheek to boop · Drag to move · Shift+drag or Right-drag to orbit 3D view"
             type="button"
           />
           <button
             aria-label="Interact with avatar torso"
+            onContextMenu={(e) => e.preventDefault()}
             onMouseEnter={handleHoverEnter}
             onMouseLeave={handleHoverLeave}
+            onPointerCancel={onRegionPointerCancel}
             onPointerDown={(e) => onRegionPointerDown('body', e)}
             onPointerMove={onRegionPointerMove}
             onPointerUp={(e) => onRegionPointerUp('body', e)}
@@ -844,9 +899,10 @@ function AvatarStageView({
               pointerEvents: 'auto',
               position: 'absolute',
               top: '52%',
+              touchAction: 'none',
               width: '92%',
             }}
-            title="Drag to move avatar · Tap for hug · Shift+drag to orbit 3D view"
+            title="Drag to move · Tap for hug · Shift+drag or Right-drag to orbit 3D view"
             type="button"
           />
         </div>
@@ -949,7 +1005,10 @@ function AvatarStageView({
           {(['bust', 'waist', 'full'] as const).map((cam) => (
             <button
               key={cam}
-              onClick={() => void controller.perform({ camera: cam })}
+              onClick={() => {
+                stageRef.current?.resetCamera();
+                void controller.perform({ camera: cam });
+              }}
               style={{
                 background: state.camera === cam ? 'var(--ui-accent, #2dd4bf)' : 'transparent',
                 border: 'none',

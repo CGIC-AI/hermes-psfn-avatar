@@ -594,15 +594,19 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     loadVrmBuffer,
     playClipByFile,
     nudgeOrbit(deltaYaw: number, deltaPitch: number): void {
-      orbitYaw = MathUtils.clamp(orbitYaw + deltaYaw, -Math.PI * 0.65, Math.PI * 0.65);
-      orbitPitch = MathUtils.clamp(orbitPitch + deltaPitch, -0.45, 0.55);
+      orbitYaw = orbitYaw + deltaYaw;
+      orbitPitch = MathUtils.clamp(orbitPitch + deltaPitch, -0.75, 0.85);
       applyCameraFraming();
-      if (!state.animated) drawFrame(0);
+      if (!disposed && state.active && width > 0 && height > 0) {
+        renderer.render(scene, camera);
+      }
     },
     nudgeZoom(factor: number): void {
       orbitZoom = MathUtils.clamp(orbitZoom * factor, 0.55, 2.2);
       applyCameraFraming();
-      if (!state.animated) drawFrame(0);
+      if (!disposed && state.active && width > 0 && height > 0) {
+        renderer.render(scene, camera);
+      }
     },
     resetCamera(): void {
       orbitYaw = 0;
