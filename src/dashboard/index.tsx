@@ -19,20 +19,10 @@ const REMOTE_MODEL_URLS: Record<string, string> = {
     'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/70bfc01c3bbc105267612f94486e0e7ee1b5a7d6/nous-girl.vrm',
   'DeepSeek-chan.vrm':
     'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm',
-  'aletheia.vrm':
-    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/aletheia.vrm',
-  'aporia.vrm':
-    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/aporia.vrm',
   'claude.vrm':
     'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude.vrm',
   'claude_suit.vrm':
     'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_suit.vrm',
-  'claude_suit_wardrobe.vrm':
-    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_suit_wardrobe.vrm',
-  'claude_robot_2k.vrm':
-    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_robot_2k.vrm',
-  'claude_robot.vrm':
-    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_robot.vrm',
 };
 
 interface DashboardSdk {

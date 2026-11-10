@@ -159,7 +159,8 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
   let companionPlayer: CompanionPlayer | null = null;
   let clipLibrary: ClipManifestEntry[] = [];
 
-  // Bounds & camera orbit
+  // Bounds & camera orbit (persisted in localStorage so reloads keep the exact angle & zoom)
+  const ORBIT_STORAGE_KEY = 'hermes-psfn-avatar:cameraOrbit';
   let modelMinY = 0;
   let modelHeight = 1.65;
   let modelCenterX = 0;
@@ -167,6 +168,36 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
   let orbitYaw = 0;
   let orbitPitch = 0.03;
   let orbitZoom = 1.0;
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const rawOrbit = window.localStorage.getItem(ORBIT_STORAGE_KEY);
+      if (rawOrbit) {
+        const parsed = JSON.parse(rawOrbit) as { yaw?: number; pitch?: number; zoom?: number };
+        if (typeof parsed.yaw === 'number' && Number.isFinite(parsed.yaw)) orbitYaw = parsed.yaw;
+        if (typeof parsed.pitch === 'number' && Number.isFinite(parsed.pitch)) {
+          orbitPitch = MathUtils.clamp(parsed.pitch, -0.75, 0.85);
+        }
+        if (typeof parsed.zoom === 'number' && Number.isFinite(parsed.zoom)) {
+          orbitZoom = MathUtils.clamp(parsed.zoom, 0.45, 3.2);
+        }
+      }
+    }
+  } catch {
+    // Ignore localStorage access errors in headless test environments
+  }
+
+  function saveOrbitState(): void {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(
+          ORBIT_STORAGE_KEY,
+          JSON.stringify({ yaw: orbitYaw, pitch: orbitPitch, zoom: orbitZoom }),
+        );
+      }
+    } catch {
+      // Ignore quota errors
+    }
+  }
 
   let state: StagePlaybackState = {
     active: true,
@@ -834,13 +865,15 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     nudgeOrbit(deltaYaw: number, deltaPitch: number): void {
       orbitYaw = orbitYaw + deltaYaw;
       orbitPitch = MathUtils.clamp(orbitPitch + deltaPitch, -0.75, 0.85);
+      saveOrbitState();
       applyCameraFraming();
       if (!disposed && state.active && width > 0 && height > 0) {
         renderer.render(scene, camera);
       }
     },
     nudgeZoom(factor: number): void {
-      orbitZoom = MathUtils.clamp(orbitZoom * factor, 0.55, 2.2);
+      orbitZoom = MathUtils.clamp(orbitZoom * factor, 0.45, 3.2);
+      saveOrbitState();
       applyCameraFraming();
       if (!disposed && state.active && width > 0 && height > 0) {
         renderer.render(scene, camera);
@@ -850,6 +883,7 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
       orbitYaw = 0;
       orbitPitch = 0.03;
       orbitZoom = 1.0;
+      saveOrbitState();
       applyCameraFraming();
       if (!state.animated) drawFrame(0);
     },

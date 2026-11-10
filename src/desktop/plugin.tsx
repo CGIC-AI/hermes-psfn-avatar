@@ -144,6 +144,7 @@ interface SharedController {
   getClips(): readonly ClipManifestEntry[];
   subscribe(listener: () => void): () => void;
   perform(patch: Record<string, unknown>): Promise<void>;
+  applyServerEvent(payload: Record<string, unknown>): void;
   selectModel(idOrFilename: string): Promise<void>;
   uploadModelFile(file: File): Promise<void>;
   loadLocalBuffer(file: File): Promise<void>;
@@ -179,26 +180,6 @@ export const REMOTE_MODEL_CATALOG: ReadonlyArray<ModelRecord> = [
     source: 'tegnike/deepseek-chan-vrm (CC BY-NC-SA 4.0)',
   },
   {
-    id: 'file:aletheia.vrm',
-    kind: 'vrm',
-    name: 'Aletheia (Eidoverse)',
-    filename: 'aletheia.vrm',
-    size_bytes: 30976184,
-    sha256: 'c0f4c8bb0b5a0ea1f79171f83b2c1ab9c21121fe9a5f1feb1cf84fe83ce6672c',
-    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/aletheia.vrm',
-    source: 'SkyeShark/eidoverse-video',
-  },
-  {
-    id: 'file:aporia.vrm',
-    kind: 'vrm',
-    name: 'Aporia (Eidoverse)',
-    filename: 'aporia.vrm',
-    size_bytes: 29971076,
-    sha256: '0b0c5dee6485a5a7017abdff6ea8b32cc3ef472f648ea1655ff23cb4740d7b19',
-    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/aporia.vrm',
-    source: 'SkyeShark/eidoverse-video',
-  },
-  {
     id: 'file:claude.vrm',
     kind: 'vrm',
     name: 'Claude (Eidoverse)',
@@ -218,37 +199,40 @@ export const REMOTE_MODEL_CATALOG: ReadonlyArray<ModelRecord> = [
     url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_suit.vrm',
     source: 'SkyeShark/eidoverse-video',
   },
-  {
-    id: 'file:claude_suit_wardrobe.vrm',
-    kind: 'vrm',
-    name: 'Claude Suit Wardrobe (Eidoverse)',
-    filename: 'claude_suit_wardrobe.vrm',
-    size_bytes: 35444376,
-    sha256: '54a6d71ceefdc44b6688b3174b3a858b006ba526e51a268060080fe3d59cd65a',
-    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_suit_wardrobe.vrm',
-    source: 'SkyeShark/eidoverse-video',
-  },
-  {
-    id: 'file:claude_robot_2k.vrm',
-    kind: 'vrm',
-    name: 'Claude Robot 2K (Eidoverse)',
-    filename: 'claude_robot_2k.vrm',
-    size_bytes: 20852556,
-    sha256: 'e04e19c594ee55d3017360e21bf499c9f56ed13a1deb17cc04e9acf881696ef4',
-    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_robot_2k.vrm',
-    source: 'SkyeShark/eidoverse-video',
-  },
-  {
-    id: 'file:claude_robot.vrm',
-    kind: 'vrm',
-    name: 'Claude Robot 4K (Eidoverse)',
-    filename: 'claude_robot.vrm',
-    size_bytes: 38561864,
-    sha256: 'fbeaa3b4162b4fd6d893b13e4172a9a9e8e78eb964e4ae4a3373c1a5bb2ca2f0',
-    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_robot.vrm',
-    source: 'SkyeShark/eidoverse-video',
-  },
 ];
+
+function readPersistent<T>(
+  storage: { get<V>(k: string, d: V): V },
+  key: string,
+  fallback: T,
+): T {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(`hermes-psfn-avatar:v2:${key}`);
+      if (raw !== null) {
+        return JSON.parse(raw) as T;
+      }
+    }
+  } catch {
+    // Fall back to plugin storage
+  }
+  return storage.get<T>(key, fallback);
+}
+
+function writePersistent(
+  storage: { set(k: string, v: unknown): void },
+  key: string,
+  value: unknown,
+): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(`hermes-psfn-avatar:v2:${key}`, JSON.stringify(value));
+    }
+  } catch {
+    // Ignore localStorage quota errors
+  }
+  storage.set(key, value);
+}
 
 const memoryModelCache = new Map<string, Promise<ArrayBuffer>>();
 
@@ -297,7 +281,8 @@ function createSharedController(ctx: {
   storage: { get<T>(k: string, d: T): T; set(k: string, v: unknown): void };
   pet?: { say?: (text: string, opts?: { id?: string; ttlMs?: number }) => () => void };
 }): SharedController {
-  const storedActiveModel = ctx.storage.get<BackendAvatarState['active_model'] | null>(
+  const storedActiveModel = readPersistent<BackendAvatarState['active_model'] | null>(
+    ctx.storage,
     'active_model',
     null,
   );
@@ -319,10 +304,10 @@ function createSharedController(ctx: {
   let state: BackendAvatarState = {
     ...DEFAULT_BACKEND_STATE,
     active_model: initialActiveModel,
-    camera: ctx.storage.get<CameraPreset>('camera', 'bust'),
-    corner: ctx.storage.get<BackendAvatarState['corner']>('corner', 'bottom-right'),
-    scale: ctx.storage.get<number>('scale', 1.0),
-    mode: ctx.storage.get<BackendAvatarState['mode']>('mode', 'floating'),
+    camera: readPersistent<CameraPreset>(ctx.storage, 'camera', 'bust'),
+    corner: readPersistent<BackendAvatarState['corner']>(ctx.storage, 'corner', 'bottom-right'),
+    scale: readPersistent<number>(ctx.storage, 'scale', 1.0),
+    mode: readPersistent<BackendAvatarState['mode']>(ctx.storage, 'mode', 'floating'),
   };
   let models: ModelRecord[] = [...REMOTE_MODEL_CATALOG];
   if (
@@ -345,7 +330,7 @@ function createSharedController(ctx: {
     for (const fn of listeners) fn();
   }
 
-  function mergeServerState(raw: unknown, allowModelOverride = false): void {
+  function mergeServerState(raw: unknown, allowLayoutOverride = false): void {
     if (!isRecord(raw)) return;
     const nextSeq = typeof raw.seq === 'number' ? raw.seq : state.seq + 1;
     const rawActive = isRecord(raw.active_model)
@@ -359,21 +344,40 @@ function createSharedController(ctx: {
         ? rawActive
         : null;
     const nextActiveModel =
-      allowModelOverride && validRawActive
+      allowLayoutOverride && validRawActive
         ? validRawActive
         : lockedActiveModel ?? state.active_model ?? validRawActive ?? DEFAULT_BACKEND_STATE.active_model;
+
+    const nextCamera =
+      allowLayoutOverride && typeof raw.camera === 'string'
+        ? (raw.camera as CameraPreset)
+        : state.camera;
+    const nextCorner =
+      allowLayoutOverride && typeof raw.corner === 'string'
+        ? (raw.corner as BackendAvatarState['corner'])
+        : state.corner;
+    const nextScale =
+      allowLayoutOverride && typeof raw.scale === 'number' ? raw.scale : state.scale;
+    const nextMode =
+      allowLayoutOverride && typeof raw.mode === 'string'
+        ? (raw.mode as BackendAvatarState['mode'])
+        : state.mode;
 
     state = {
       ...state,
       ...(raw as Partial<BackendAvatarState>),
       active_model: nextActiveModel,
+      camera: nextCamera,
+      corner: nextCorner,
+      scale: nextScale,
+      mode: nextMode,
       seq: nextSeq,
     };
-    ctx.storage.set('active_model', state.active_model);
-    ctx.storage.set('camera', state.camera);
-    ctx.storage.set('corner', state.corner);
-    ctx.storage.set('scale', state.scale);
-    ctx.storage.set('mode', state.mode);
+    writePersistent(ctx.storage, 'active_model', state.active_model);
+    writePersistent(ctx.storage, 'camera', state.camera);
+    writePersistent(ctx.storage, 'corner', state.corner);
+    writePersistent(ctx.storage, 'scale', state.scale);
+    writePersistent(ctx.storage, 'mode', state.mode);
     emit();
   }
 
@@ -394,6 +398,25 @@ function createSharedController(ctx: {
     }
   }
 
+  function applyServerEvent(payload: Record<string, unknown>): void {
+    // Only apply emote/activity fields from backend broadcasts — never overwrite local layout or model
+    const safePatch: Record<string, unknown> = {};
+    for (const k of [
+      'activity',
+      'mood',
+      'emotional_base',
+      'vad',
+      'reaction',
+      'clip',
+      'speech_text',
+      'speech_Id',
+      'psfn_lite',
+    ]) {
+      if (k in payload) safePatch[k] = payload[k];
+    }
+    mergeServerState(safePatch, false);
+  }
+
   async function perform(patch: Record<string, unknown>): Promise<void> {
     // Optimistic local update so UI & 3D stage respond in 0ms
     const nextMood = typeof patch.mood === 'string' ? patch.mood.toLowerCase() : state.mood;
@@ -407,16 +430,19 @@ function createSharedController(ctx: {
     const nextSpeechId =
       patch.say !== undefined || patch.speech_text !== undefined ? state.speech_Id + 1 : state.speech_Id;
 
-    mergeServerState({
-      ...state,
-      ...patch,
-      active_model: state.active_model,
-      mood: nextMood,
-      emotional_base: nextBase,
-      speech_text: nextSpeechText,
-      speech_Id: nextSpeechId,
-      seq: state.seq + 1,
-    });
+    mergeServerState(
+      {
+        ...state,
+        ...patch,
+        active_model: state.active_model,
+        mood: nextMood,
+        emotional_base: nextBase,
+        speech_text: nextSpeechText,
+        speech_Id: nextSpeechId,
+        seq: state.seq + 1,
+      },
+      true,
+    );
 
     if (typeof patch.say === 'string' && patch.say.trim()) {
       ctx.pet?.say?.(patch.say.trim(), { id: 'avatar-say', ttlMs: 6000 });
@@ -458,7 +484,7 @@ function createSharedController(ctx: {
               filename: cleanFile || 'Nous-Girl.vrm',
             };
     lockedActiveModel = nextActive;
-    ctx.storage.set('active_model', nextActive);
+    writePersistent(ctx.storage, 'active_model', nextActive);
     mergeServerState(
       {
         ...state,
@@ -471,7 +497,7 @@ function createSharedController(ctx: {
         method: 'POST',
         body: { id: idOrFilename, filename: nextActive.filename },
       });
-      if (res?.state) mergeServerState(res.state, true);
+      if (res?.state) mergeServerState(res.state, false);
     } catch {
       // Offline fallback
     }
@@ -501,7 +527,7 @@ function createSharedController(ctx: {
       ];
     }
     lockedActiveModel = nextActive;
-    ctx.storage.set('active_model', nextActive);
+    writePersistent(ctx.storage, 'active_model', nextActive);
     mergeServerState(
       {
         ...state,
@@ -659,6 +685,7 @@ function createSharedController(ctx: {
       return () => listeners.delete(listener);
     },
     perform,
+    applyServerEvent,
     selectModel,
     uploadModelFile,
     loadLocalBuffer,
@@ -1206,7 +1233,6 @@ function AvatarStageView({
             <button
               key={cam}
               onClick={() => {
-                stageRef.current?.resetCamera();
                 void controller.perform({ camera: cam });
               }}
               style={{
@@ -1343,10 +1369,10 @@ function StatusbarAndFloatingOverlay({
 }) {
   const state = useControllerState(controller);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>(() =>
-    storage.get('dragOffsetV2', { x: 0, y: 0 }),
+    readPersistent(storage, 'dragOffsetV2', { x: 0, y: 0 }),
   );
   const [positionLocked, setPositionLocked] = useState<boolean>(() =>
-    storage.get('positionLocked', false),
+    readPersistent(storage, 'positionLocked', false),
   );
   const [liveDelta, setLiveDelta] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -1410,7 +1436,7 @@ function StatusbarAndFloatingOverlay({
                 const next = { x: dragOffset.x + deltaX, y: dragOffset.y + deltaY };
                 setDragOffset(next);
                 setLiveDelta({ x: 0, y: 0 });
-                storage.set('dragOffsetV2', next);
+                writePersistent(storage, 'dragOffsetV2', next);
               } else {
                 setLiveDelta({ x: deltaX, y: deltaY });
               }
@@ -1418,7 +1444,7 @@ function StatusbarAndFloatingOverlay({
             onTogglePositionLock={() => {
               setPositionLocked((prev) => {
                 const next = !prev;
-                storage.set('positionLocked', next);
+                writePersistent(storage, 'positionLocked', next);
                 return next;
               });
             }}
@@ -1864,7 +1890,7 @@ const plugin = {
     // Listen to Python backend broadcasts (`broadcast_plugin_event('hermes-psfn-avatar', 'state', ...)`)
     ctx.onEvent(`plugin.${PLUGIN_ID}.state`, ({ payload }) => {
       if (isRecord(payload)) {
-        void controller.perform(payload);
+        controller.applyServerEvent(payload);
       }
     });
 
