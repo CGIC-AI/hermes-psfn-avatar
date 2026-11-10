@@ -115,13 +115,21 @@ test('3D Holo-Rig, VrmClipPlayer, CompanionPlayer mood envelopes, and emotion ma
   companion.update(0.1, { enabled: true });
   assert.equal(holo.expressionManager.getValue('aa') > 0.3, true);
 
-  // Simulate tool use / thinking with no TTS audio: selects Thinking state and closes mouth
+  // Simulate tool use / thinking with no TTS audio: selects Thinking state, closes mouth,
+  // and rotates through the 9-clip calm idle + hand-to-chin pondering sequence
   audio.speechTime = null;
   audio.speechLevel = 0;
   companion.setMode('auto');
   companion.update(0.65, { thinking: true, enabled: true });
   assert.equal(companion.state, 'Thinking');
   assert.equal(holo.expressionManager.getValue('aa'), 0);
+  await new Promise((r) => setTimeout(r, 20));
+  const firstThinkingUrl = clipPlayer.url;
+  assert.ok(firstThinkingUrl.endsWith('Curiosity_Mood_02.json'));
+  clipPlayer.completedLoops = 1;
+  companion.update(0.1, { thinking: true, enabled: true });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(clipPlayer.url.endsWith('Neutral_Idle_01.json'));
 
   companion.dispose();
   holo.dispose();

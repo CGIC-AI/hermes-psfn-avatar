@@ -34,6 +34,34 @@ interface MoodOverlay {
   release: { from: number; elapsed: number } | null;
 }
 
+/**
+ * Curated 55-second Thinking choreography sequence:
+ * alternates hand-to-chin / temple / weighing-idea gestures with long, calm 8-second
+ * Idle and Listening stances so long tool-use or reasoning runs never repeat a short clip in a loop.
+ */
+const THINKING_ROTATION_FILES: readonly string[] = [
+  'Curiosity_Mood_02.json', // 4.2s — hand to chin / face pondering
+  'Neutral_Idle_01.json', // 8.0s — calm relaxed breathing stance
+  'Neutral_Listening_03.json', // 8.0s — calm posture with gentle thoughtful nods
+  'Neutral_Thinking_04.json', // 3.0s — weighing an idea
+  'Neutral_Idle_01.json', // 8.0s — calm relaxed breathing stance
+  'Nod_Reaction_01.json', // 5.0s — thoughtful head tilt & nod
+  'Neutral_Listening_01.json', // 8.0s — quiet attentive stance
+  'Realization_Mood_01.json', // 3.2s — hand to temple ("considering / aha")
+  'Neutral_Idle_01.json', // 8.0s — calm relaxed breathing stance
+];
+
+/**
+ * Calm Idle rotation with occasional subtle listening/breathing variation between long relaxed stretches.
+ */
+const IDLE_ROTATION_FILES: readonly string[] = [
+  'Neutral_Idle_01.json',
+  'Neutral_Idle_01.json',
+  'Neutral_Listening_03.json',
+  'Neutral_Idle_01.json',
+  'Relief_Mood_01.json',
+];
+
 export class CompanionPlayer {
   readonly body: VrmClipPlayer;
   readonly expressions: ExpressionAdapter | null;
@@ -193,16 +221,38 @@ export class CompanionPlayer {
     }
   }
 
-  async select(state: string, advance = false): Promise<void> {
-    this.state = state;
-    const sequence = ++this.sequence;
-    this.body.cancelPendingLoad();
+  private choicesForState(state: string): ClipManifestEntry[] {
+    const byFile = (filename: string): ClipManifestEntry | undefined =>
+      this.library.find((c) => (c.url.split('/').pop() ?? c.url) === filename);
+
+    if (state === 'Thinking') {
+      const curated = THINKING_ROTATION_FILES.map(byFile).filter(
+        (c): c is ClipManifestEntry => Boolean(c),
+      );
+      if (curated.length > 0) return curated;
+    }
+
+    if (state === 'Idle') {
+      const curated = IDLE_ROTATION_FILES.map(byFile).filter(
+        (c): c is ClipManifestEntry => Boolean(c),
+      );
+      if (curated.length > 0) return curated;
+    }
+
     let choices = this.library.filter(
       (c) => c.state === state && c.expression === 'Neutral' && c.loop !== false,
     );
     if (!choices.length) {
       choices = this.library.filter((c) => c.state === 'Idle' && c.expression === 'Neutral');
     }
+    return choices;
+  }
+
+  async select(state: string, advance = false): Promise<void> {
+    this.state = state;
+    const sequence = ++this.sequence;
+    this.body.cancelPendingLoad();
+    const choices = this.choicesForState(state);
     const previous = this.variantByState.get(state) ?? -1;
     const index = choices.length ? (previous + 1) % choices.length : 0;
     const clip = choices[index];
@@ -219,7 +269,7 @@ export class CompanionPlayer {
     this.selecting = true;
     try {
       if (this.body.url !== clip.url || !this.body.playing) {
-        const fadeSeconds = this.body.clip ? 0.4 : 0;
+        const fadeSeconds = this.body.clip ? (state === 'Thinking' ? 0.55 : 0.4) : 0;
         await this.body.load(clip.url);
         if (sequence !== this.sequence) return;
         this.body.play({ loop: true, fadeSeconds });
@@ -258,7 +308,13 @@ export class CompanionPlayer {
         if (nextState !== this.state) void this.select(nextState);
       }
       this.body.update(dt);
-      if (this.mode !== 'preview' && !this.selecting && this.body.completedLoops >= 2 && this.state) {
+      const loopsBeforeAdvance = this.state === 'Thinking' ? 1 : 2;
+      if (
+        this.mode !== 'preview' &&
+        !this.selecting &&
+        this.body.completedLoops >= loopsBeforeAdvance &&
+        this.state
+      ) {
         this.body.completedLoops = 0;
         void this.select(this.state, true);
       }
