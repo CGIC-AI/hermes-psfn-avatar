@@ -1513,14 +1513,27 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
             <div>
               <div className="mb-1 text-(--ui-text-tertiary)">Overlay Corner</div>
               <select
-                className="w-full rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1 text-xs"
+                className="w-full rounded border border-(--ui-stroke-secondary) px-2 py-1 text-xs"
                 onChange={(e) => void controller.perform({ corner: e.target.value })}
+                style={{
+                  backgroundColor: 'var(--ui-surface-2, #18181b)',
+                  color: 'var(--ui-text-primary, #f4f4f5)',
+                  colorScheme: 'dark',
+                }}
                 value={state.corner}
               >
-                <option value="bottom-right">Bottom Right</option>
-                <option value="bottom-left">Bottom Left</option>
-                <option value="top-right">Top Right</option>
-                <option value="top-left">Top Left</option>
+                <option style={{ backgroundColor: '#18181b', color: '#f4f4f5' }} value="bottom-right">
+                  Bottom Right
+                </option>
+                <option style={{ backgroundColor: '#18181b', color: '#f4f4f5' }} value="bottom-left">
+                  Bottom Left
+                </option>
+                <option style={{ backgroundColor: '#18181b', color: '#f4f4f5' }} value="top-right">
+                  Top Right
+                </option>
+                <option style={{ backgroundColor: '#18181b', color: '#f4f4f5' }} value="top-left">
+                  Top Left
+                </option>
               </select>
             </div>
           </div>
@@ -1590,34 +1603,7 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
               })}
             </div>
             <div className="mt-2 text-[11px] text-(--ui-text-tertiary)">
-              3rd-party VRM binaries are fetched on demand from commit-pinned URLs, verified via SHA-256, and cached locally in IndexedDB — zero binaries are bundled in the plugin repo. Sources:{' '}
-              <a
-                className="underline"
-                href="https://github.com/CGIC-AI/nous-girl-vrm/blob/70bfc01c3bbc105267612f94486e0e7ee1b5a7d6/LICENSE.md"
-                rel="noreferrer"
-                target="_blank"
-              >
-                CGIC-AI/nous-girl-vrm
-              </a>{' '}
-              (Default) ·{' '}
-              <a
-                className="underline"
-                href="https://github.com/tegnike/deepseek-chan-vrm"
-                rel="noreferrer"
-                target="_blank"
-              >
-                tegnike/deepseek-chan-vrm
-              </a>{' '}
-              (CC BY-NC-SA 4.0) ·{' '}
-              <a
-                className="underline"
-                href="https://github.com/SkyeShark/eidoverse-video/tree/main/eidoverse/assets/vrms"
-                rel="noreferrer"
-                target="_blank"
-              >
-                SkyeShark/eidoverse-video
-              </a>
-              .
+              3rd-party VRM binaries are fetched on demand from commit-pinned URLs and cached locally.
             </div>
           </div>
 
@@ -1677,14 +1663,23 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
             </div>
             {clips.length > 0 && (
               <select
-                className="w-full rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1 text-xs"
+                className="w-full rounded border border-(--ui-stroke-secondary) px-2 py-1 text-xs"
                 onChange={(e) => void controller.perform({ clip: e.target.value })}
+                style={{
+                  backgroundColor: 'var(--ui-surface-2, #18181b)',
+                  color: 'var(--ui-text-primary, #f4f4f5)',
+                  colorScheme: 'dark',
+                }}
                 value={state.clip ?? ''}
               >
                 {clips.map((c) => {
                   const file = c.url.split('/').pop() ?? c.url;
                   return (
-                    <option key={file} value={file}>
+                    <option
+                      key={file}
+                      style={{ backgroundColor: '#18181b', color: '#f4f4f5' }}
+                      value={file}
+                    >
                       [{c.state}] {c.name} ({file})
                     </option>
                   );
