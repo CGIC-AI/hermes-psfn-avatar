@@ -111,7 +111,7 @@ const DEFAULT_BACKEND_STATE: BackendAvatarState = {
   muted: false,
   active_model: {
     kind: 'vrm',
-    name: 'Nous-Girl (Hermes · CC BY-NC-SA 4.0)',
+    name: 'Nous-Girl (VRM 0.x)',
     filename: 'Nous-Girl.vrm',
   },
   psfn_lite: {
@@ -151,9 +151,9 @@ interface SharedController {
 }
 
 const NOUS_GIRL_URL =
-  'https://raw.githubusercontent.com/axAilotl/nous-girl-vrm/82d3e874855040748a150080c3c142b6cd8cfc01/Nous-Girl.vrm';
+  'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/d923c0567622403083f994a249b6a42997bd2049/nous-girl.vrm';
 const NOUS_GIRL_SHA256 =
-  'a99c587d26f02012079f8f8aa6a6cdda5c99da626eee01e91bb65fbf4def3747';
+  '2732b6431ceea8cc4da25d3ae416d1ba6ca8255720339c46803e7d9a78a6be5d';
 const DEEPSEEK_CHAN_URL =
   'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm';
 const DEEPSEEK_CHAN_SHA256 =
@@ -239,7 +239,7 @@ function createSharedController(ctx: {
     {
       id: 'file:Nous-Girl.vrm',
       kind: 'vrm',
-      name: 'Nous-Girl (Hermes · CC BY-NC-SA 4.0)',
+      name: 'Nous-Girl (VRM 0.x)',
       filename: 'Nous-Girl.vrm',
     },
     {
@@ -376,7 +376,7 @@ function createSharedController(ctx: {
               kind: cleanFile.toLowerCase().endsWith('.glb') ? 'glb' : 'vrm',
               name:
                 cleanFile === 'Nous-Girl.vrm'
-                  ? 'Nous-Girl (Hermes · CC BY-NC-SA 4.0)'
+                  ? 'Nous-Girl (VRM 0.x)'
                   : cleanFile.replace(/\.(?:vrm|glb)$/i, ''),
               filename: cleanFile || 'Nous-Girl.vrm',
             };
@@ -707,7 +707,7 @@ function AvatarStageView({
 
   // Reload model when active_model changes
   const activeFilename = state.active_model?.filename || 'Nous-Girl.vrm';
-  const activeName = state.active_model?.name || 'Nous-Girl (Hermes · CC BY-NC-SA 4.0)';
+  const activeName = state.active_model?.name || 'Nous-Girl (VRM 0.x)';
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -1506,8 +1506,16 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
               })}
             </div>
             <div className="mt-2 text-[11px] text-(--ui-text-tertiary)">
-              Default: <strong>Nous-Girl</strong> (Hermes / PSFN original assembly, CC BY-NC-SA 4.0) ·{' '}
-              <strong>DeepSeek-chan</strong> (character 溟月 by 上善无形 · maid design by ZipZipPipe · 3D model by ニケ, CC BY-NC-SA 4.0).
+              Default: <strong>Nous-Girl</strong> (Vega / PSFN assembly, see{' '}
+              <a
+                className="underline"
+                href="https://github.com/CGIC-AI/nous-girl-vrm/blob/d923c0567622403083f994a249b6a42997bd2049/LICENSE.md"
+                rel="noreferrer"
+                target="_blank"
+              >
+                CGIC-AI/nous-girl-vrm LICENSE.md
+              </a>
+              ) · <strong>DeepSeek-chan</strong> (character 溟月 by 上善无形 · maid design by ZipZipPipe · 3D model by ニケ, CC BY-NC-SA 4.0).
             </div>
           </div>
 

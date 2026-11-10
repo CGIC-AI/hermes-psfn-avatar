@@ -237,7 +237,7 @@ def default_state() -> dict[str, Any]:
         "muted": False,
         "active_model": {
             "kind": "vrm",
-            "name": "Nous-Girl (Hermes · CC BY-NC-SA 4.0)",
+            "name": "Nous-Girl (VRM 0.x)",
             "filename": "Nous-Girl.vrm",
         },
         "psfn_lite": {
@@ -441,9 +441,9 @@ def list_models() -> list[dict[str, Any]]:
         {
             "id": "file:Nous-Girl.vrm",
             "kind": "vrm",
-            "name": "Nous-Girl (Hermes · CC BY-NC-SA 4.0)",
+            "name": "Nous-Girl (VRM 0.x)",
             "filename": "Nous-Girl.vrm",
-            "size_bytes": 11490464,
+            "size_bytes": 11491944,
         },
         {
             "id": "file:DeepSeek-chan.vrm",

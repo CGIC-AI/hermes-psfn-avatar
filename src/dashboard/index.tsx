@@ -152,7 +152,7 @@ function mountDashboardPlugin(): void {
     }, []);
 
     const filename = state.active_model?.filename || 'Nous-Girl.vrm';
-    const modelName = state.active_model?.name || 'Nous-Girl (Hermes · CC BY-NC-SA 4.0)';
+    const modelName = state.active_model?.name || 'Nous-Girl (VRM 0.x)';
 
     useEffect(() => {
       const stage = stageRef.current;
@@ -160,7 +160,7 @@ function mountDashboardPlugin(): void {
       const fallbackUrl =
         filename === 'DeepSeek-chan.vrm'
           ? 'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm'
-          : 'https://raw.githubusercontent.com/axAilotl/nous-girl-vrm/82d3e874855040748a150080c3c142b6cd8cfc01/Nous-Girl.vrm';
+          : 'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/d923c0567622403083f994a249b6a42997bd2049/nous-girl.vrm';
       fetch(`${apiBase}/models/file/${encodeURIComponent(filename)}`)
         .then((r) => (r.ok ? r.arrayBuffer() : fetch(fallbackUrl).then((r2) => r2.arrayBuffer())))
         .then((buf) => stage.loadVrmBuffer(buf, modelName))
