@@ -3,7 +3,25 @@
  * Ported from /home/vega/Projects/psfn/avatar-demo/vrm-clip-player.js.
  */
 
-import { MathUtils, Quaternion, Vector3, type Object3D } from 'three';
+import { Euler, MathUtils, Quaternion, Vector3, type Object3D } from 'three';
+
+/**
+ * World-space coronal abduction (+Z/-Z) and forward clearance (-X) offsets so
+ * SMPL/ARDY motion-capture clips clear anime VRM sleeves, dresses, and hair curls
+ * instead of pressing elbows/forearms inward into the torso.
+ */
+const WORLD_ARM_CLEARANCE_OFFSETS: Readonly<Record<string, Quaternion>> = {
+  leftShoulder: new Quaternion().setFromEuler(new Euler(0, 0, 0.05, 'XYZ')),
+  rightShoulder: new Quaternion().setFromEuler(new Euler(0, 0, -0.05, 'XYZ')),
+  leftUpperArm: new Quaternion().setFromEuler(new Euler(-0.06, 0, 0.22, 'XYZ')),
+  rightUpperArm: new Quaternion().setFromEuler(new Euler(-0.06, 0, -0.22, 'XYZ')),
+  leftLowerArm: new Quaternion().setFromEuler(new Euler(-0.10, 0, 0.26, 'XYZ')),
+  rightLowerArm: new Quaternion().setFromEuler(new Euler(-0.10, 0, -0.26, 'XYZ')),
+  leftHand: new Quaternion().setFromEuler(new Euler(-0.08, 0, 0.22, 'XYZ')),
+  rightHand: new Quaternion().setFromEuler(new Euler(-0.08, 0, -0.22, 'XYZ')),
+  leftThumbMetacarpal: new Quaternion().setFromEuler(new Euler(-0.08, 0, 0.22, 'XYZ')),
+  rightThumbMetacarpal: new Quaternion().setFromEuler(new Euler(-0.08, 0, -0.22, 'XYZ')),
+};
 
 export const BONE_MAP: Readonly<Record<string, string | null>> = {
   Hips: 'hips',
@@ -241,6 +259,10 @@ export class VrmClipPlayer {
         q0.slerp(q1.fromArray(this.clip.globalQuat[0]![m.coreIdx]!).normalize(), blend);
       }
       const targetGlobal = q0.clone().multiply(m.coreRestInv).multiply(m.vrmRestGlobal);
+      const clearance = WORLD_ARM_CLEARANCE_OFFSETS[m.vrmName];
+      if (clearance) {
+        targetGlobal.premultiply(clearance);
+      }
       const parentGlobal = m.node.parent
         ? m.node.parent.getWorldQuaternion(new Quaternion())
         : new Quaternion();

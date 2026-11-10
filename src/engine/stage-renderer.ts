@@ -124,7 +124,9 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
 
   let pointerClientX = 0;
   let pointerClientY = 0;
+  let lastPointerMoveMs = -Infinity;
   let hasPointer = false;
+  let glanceWeight = 0;
   let lookX = 0;
   let lookY = 0;
   let eyeLookX = 0;
@@ -132,9 +134,13 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
 
   const onWindowPointerMove = (ev: { clientX: number; clientY: number }): void => {
     if (typeof ev.clientX === 'number' && typeof ev.clientY === 'number') {
+      const moved = Math.hypot(ev.clientX - pointerClientX, ev.clientY - pointerClientY);
       pointerClientX = ev.clientX;
       pointerClientY = ev.clientY;
       hasPointer = true;
+      if (moved >= 2) {
+        lastPointerMoveMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      }
     }
   };
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
@@ -530,9 +536,18 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
   }
 
   function applyCursorGaze(dt: number, expr: ExpressionAdapter | null): void {
-    let targetX = 0;
-    let targetY = 0;
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const sinceMoveSec = Math.max(0, (nowMs - lastPointerMoveMs) / 1000);
+    const speaking = audioClock.speechTime !== null || state.activity === 'talking';
 
+    // Most of the time (and always while speaking), look straight out at the user on the other side of the monitor.
+    // Only glance lightly toward the cursor while it is actively moving (within ~1.3s), then return to center.
+    const wantGlance = !speaking && hasPointer && sinceMoveSec < 1.3 ? 0.34 : 0;
+    const glanceRate = wantGlance > glanceWeight ? 4.5 : 2.8;
+    glanceWeight += (wantGlance - glanceWeight) * (dt > 0 ? Math.min(1, dt * glanceRate) : 1);
+
+    let rawX = 0;
+    let rawY = 0;
     if (hasPointer && typeof window !== 'undefined' && typeof canvas.getBoundingClientRect === 'function') {
       const rect = canvas.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
@@ -540,19 +555,22 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
         const headRatioY =
           state.cameraPreset === 'bust' ? 0.34 : state.cameraPreset === 'waist' ? 0.26 : 0.18;
         const headAnchorY = rect.top + rect.height * headRatioY;
-        const spanX = Math.max(220, (window.innerWidth || 800) * 0.38);
-        const spanY = Math.max(180, (window.innerHeight || 600) * 0.38);
-        targetX = MathUtils.clamp((pointerClientX - headAnchorX) / spanX, -1, 1);
-        targetY = MathUtils.clamp((pointerClientY - headAnchorY) / spanY, -1, 1);
+        const spanX = Math.max(240, (window.innerWidth || 800) * 0.42);
+        const spanY = Math.max(200, (window.innerHeight || 600) * 0.42);
+        rawX = MathUtils.clamp((pointerClientX - headAnchorX) / spanX, -1, 1);
+        rawY = MathUtils.clamp((pointerClientY - headAnchorY) / spanY, -1, 1);
       }
     }
 
-    const headLerp = dt > 0 ? Math.min(1, dt * 10) : 1;
-    const eyeLerp = dt > 0 ? Math.min(1, dt * 22) : 1;
+    const targetX = rawX * glanceWeight;
+    const targetY = rawY * glanceWeight;
+
+    const headLerp = dt > 0 ? Math.min(1, dt * 6.5) : 1;
+    const eyeLerp = dt > 0 ? Math.min(1, dt * 14.0) : 1;
     lookX += (targetX - lookX) * headLerp;
     lookY += (targetY - lookY) * headLerp;
-    eyeLookX += (targetX - eyeLookX) * eyeLerp;
-    eyeLookY += (targetY - eyeLookY) * eyeLerp;
+    eyeLookX += (targetX * 1.35 - eyeLookX) * eyeLerp;
+    eyeLookY += (targetY * 1.35 - eyeLookY) * eyeLerp;
 
     const dir = currentVrm?.meta?.metaVersion === '0' ? -1 : 1;
     const upperChest = getBoneNode('upperChest');
@@ -681,13 +699,13 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
       const rLower = getBoneNode('rightLowerArm');
       const chest = getBoneNode('chest');
       if (lUpper) {
-        lUpper.rotation.z = dir * (-1.18 + Math.sin(elapsedSec * 1.6) * 0.03);
+        lUpper.rotation.z = dir * (-1.02 + Math.sin(elapsedSec * 1.6) * 0.03);
         lUpper.rotation.x = speaking ? Math.sin(elapsedSec * 5.2) * 0.14 : 0.06;
       }
       if (rUpper) {
         rUpper.rotation.z = waving
           ? dir * (-2.1 + Math.sin(elapsedSec * 9.0) * 0.25)
-          : dir * (1.18 - Math.sin(elapsedSec * 1.6) * 0.03);
+          : dir * (1.02 - Math.sin(elapsedSec * 1.6) * 0.03);
         rUpper.rotation.x = speaking ? Math.cos(elapsedSec * 4.8) * 0.14 : 0.06;
       }
       if (lLower) lLower.rotation.z = speaking ? 0.25 + Math.sin(elapsedSec * 6.0) * 0.12 : 0.12;
