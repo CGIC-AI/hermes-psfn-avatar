@@ -682,12 +682,16 @@ function AvatarStageView({
   heightPx,
   interactiveTouch = true,
   compactHud = true,
+  positionLocked = false,
+  onTogglePositionLock,
   onOverlayDragDelta,
 }: {
   controller: SharedController;
   heightPx: number;
   interactiveTouch?: boolean;
   compactHud?: boolean;
+  positionLocked?: boolean;
+  onTogglePositionLock?: () => void;
   onOverlayDragDelta?: (dx: number, dy: number, commit: boolean) => void;
 }) {
   const state = useControllerState(controller);
@@ -839,6 +843,8 @@ function AvatarStageView({
     state.muted,
   ]);
 
+  const canDragOverlay = Boolean(onOverlayDragDelta && !positionLocked);
+
   const onRegionPointerDown = useCallback(
     (region: TouchRegion, e: React.PointerEvent) => {
       e.preventDefault();
@@ -880,7 +886,11 @@ function AvatarStageView({
         start.wantOrbit = true;
         start.mode = 'orbit';
       } else if (start.mode === 'undecided' && totalDist >= 4) {
-        start.mode = start.wantOrbit ? 'orbit' : 'move-window';
+        if (start.wantOrbit) {
+          start.mode = 'orbit';
+        } else if (canDragOverlay) {
+          start.mode = 'move-window';
+        }
       }
 
       if (start.mode === 'orbit') {
@@ -890,11 +900,11 @@ function AvatarStageView({
         return;
       }
 
-      if (start.mode === 'move-window' && onOverlayDragDelta) {
+      if (start.mode === 'move-window' && canDragOverlay && onOverlayDragDelta) {
         onOverlayDragDelta(totalDx, totalDy, false);
       }
     },
-    [onOverlayDragDelta],
+    [canDragOverlay, onOverlayDragDelta],
   );
 
   const onRegionPointerCancel = useCallback((e: React.PointerEvent) => {
@@ -920,7 +930,7 @@ function AvatarStageView({
         return;
       }
 
-      if (start.mode === 'move-window' && onOverlayDragDelta) {
+      if (start.mode === 'move-window' && canDragOverlay && onOverlayDragDelta) {
         onOverlayDragDelta(deltaX, deltaY, true);
         return;
       }
@@ -946,7 +956,7 @@ function AvatarStageView({
       });
       setTimeout(() => setTouchBanner(null), 1600);
     },
-    [controller, onOverlayDragDelta],
+    [canDragOverlay, controller, onOverlayDragDelta],
   );
 
   return (
@@ -989,7 +999,7 @@ function AvatarStageView({
           onPointerUp={(e) => onRegionPointerUp('body', e)}
           style={{
             bottom: 0,
-            cursor: 'grab',
+            cursor: canDragOverlay ? 'grab' : 'pointer',
             left: '2%',
             pointerEvents: 'auto',
             position: 'absolute',
@@ -1023,7 +1033,7 @@ function AvatarStageView({
             style={{
               background: 'transparent',
               border: 'none',
-              cursor: 'grab',
+              cursor: canDragOverlay ? 'grab' : 'pointer',
               height: '30%',
               left: '10%',
               pointerEvents: 'auto',
@@ -1032,7 +1042,11 @@ function AvatarStageView({
               touchAction: 'none',
               width: '80%',
             }}
-            title="Tap for headpat · Drag to move · Shift+drag or Right-drag to orbit 3D view"
+            title={
+              positionLocked
+                ? 'Tap for headpat (Position locked · Shift+drag or Right-drag to orbit 3D view)'
+                : 'Tap for headpat · Drag to move · Shift+drag or Right-drag to orbit 3D view'
+            }
             type="button"
           />
           <button
@@ -1047,7 +1061,7 @@ function AvatarStageView({
             style={{
               background: 'transparent',
               border: 'none',
-              cursor: 'grab',
+              cursor: canDragOverlay ? 'grab' : 'pointer',
               height: '22%',
               left: '14%',
               pointerEvents: 'auto',
@@ -1056,7 +1070,11 @@ function AvatarStageView({
               touchAction: 'none',
               width: '72%',
             }}
-            title="Tap cheek to boop · Drag to move · Shift+drag or Right-drag to orbit 3D view"
+            title={
+              positionLocked
+                ? 'Tap cheek to boop (Position locked · Shift+drag or Right-drag to orbit 3D view)'
+                : 'Tap cheek to boop · Drag to move · Shift+drag or Right-drag to orbit 3D view'
+            }
             type="button"
           />
           <button
@@ -1071,7 +1089,7 @@ function AvatarStageView({
             style={{
               background: 'transparent',
               border: 'none',
-              cursor: 'grab',
+              cursor: canDragOverlay ? 'grab' : 'pointer',
               height: '48%',
               left: '4%',
               pointerEvents: 'auto',
@@ -1080,7 +1098,11 @@ function AvatarStageView({
               touchAction: 'none',
               width: '92%',
             }}
-            title="Drag to move · Tap for hug · Shift+drag or Right-drag to orbit 3D view"
+            title={
+              positionLocked
+                ? 'Tap for hug (Position locked · Shift+drag or Right-drag to orbit 3D view)'
+                : 'Drag to move · Tap for hug · Shift+drag or Right-drag to orbit 3D view'
+            }
             type="button"
           />
         </div>
@@ -1215,13 +1237,42 @@ function AvatarStageView({
               color: 'var(--ui-text-secondary, #cbd5e1)',
               cursor: 'pointer',
               fontSize: '10.5px',
-              padding: '2px 6px',
+              padding: '2px 5px',
             }}
             title="Wave hello"
             type="button"
           >
             👋
           </button>
+          {onTogglePositionLock && (
+            <button
+              aria-label={positionLocked ? 'Unlock overlay position' : 'Lock overlay position'}
+              onClick={onTogglePositionLock}
+              style={{
+                background: positionLocked
+                  ? 'rgba(45, 212, 191, 0.18)'
+                  : 'transparent',
+                border: positionLocked
+                  ? '1px solid var(--ui-accent, #2dd4bf)'
+                  : '1px solid transparent',
+                borderRadius: '999px',
+                color: positionLocked
+                  ? 'var(--ui-accent, #2dd4bf)'
+                  : 'var(--ui-text-secondary, #cbd5e1)',
+                cursor: 'pointer',
+                fontSize: '10.5px',
+                padding: '1px 5px',
+              }}
+              title={
+                positionLocked
+                  ? 'Position locked (click to unlock dragging)'
+                  : 'Lock position so dragging does not move the avatar'
+              }
+              type="button"
+            >
+              {positionLocked ? '🔒' : '🔓'}
+            </button>
+          )}
           <button
             onClick={() =>
               void controller.perform({
@@ -1294,6 +1345,9 @@ function StatusbarAndFloatingOverlay({
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>(() =>
     storage.get('dragOffsetV2', { x: 0, y: 0 }),
   );
+  const [positionLocked, setPositionLocked] = useState<boolean>(() =>
+    storage.get('positionLocked', false),
+  );
   const [liveDelta, setLiveDelta] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const widthPx = Math.round(215 * (state.scale || 1));
@@ -1351,6 +1405,7 @@ function StatusbarAndFloatingOverlay({
             heightPx={heightPx}
             interactiveTouch
             onOverlayDragDelta={(deltaX, deltaY, commit) => {
+              if (positionLocked) return;
               if (commit) {
                 const next = { x: dragOffset.x + deltaX, y: dragOffset.y + deltaY };
                 setDragOffset(next);
@@ -1360,6 +1415,14 @@ function StatusbarAndFloatingOverlay({
                 setLiveDelta({ x: deltaX, y: deltaY });
               }
             }}
+            onTogglePositionLock={() => {
+              setPositionLocked((prev) => {
+                const next = !prev;
+                storage.set('positionLocked', next);
+                return next;
+              });
+            }}
+            positionLocked={positionLocked}
           />
         </div>
       )}
