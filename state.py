@@ -222,9 +222,9 @@ def default_state() -> dict[str, Any]:
         "mode": "floating",
         "muted": False,
         "active_model": {
-            "kind": "holo",
-            "name": "Persephone Holo-Rig (Built-in)",
-            "filename": None,
+            "kind": "vrm",
+            "name": "DeepSeek-chan (VRM 1.0)",
+            "filename": "DeepSeek-chan.vrm",
         },
         "psfn_lite": {
             "connected": False,
@@ -417,16 +417,23 @@ def list_models() -> list[dict[str, Any]]:
     """List available avatar models (built-in procedural Holo-Rig plus uploaded VRM/GLB files)."""
     items: list[dict[str, Any]] = [
         {
+            "id": "file:DeepSeek-chan.vrm",
+            "kind": "vrm",
+            "name": "DeepSeek-chan (VRM 1.0)",
+            "filename": "DeepSeek-chan.vrm",
+            "size_bytes": 33616628,
+        },
+        {
             "id": "builtin:holo",
             "kind": "holo",
             "name": "Persephone Holo-Rig (Built-in)",
             "filename": None,
             "size_bytes": 0,
-        }
+        },
     ]
     mdir = models_dir()
     for path in sorted(mdir.iterdir()):
-        if path.is_file() and _SAFE_FILENAME_RE.match(path.name):
+        if path.is_file() and _SAFE_FILENAME_RE.match(path.name) and path.name != "DeepSeek-chan.vrm":
             ext = path.suffix.lower().lstrip(".")
             items.append(
                 {

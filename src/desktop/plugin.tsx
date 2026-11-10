@@ -110,9 +110,9 @@ const DEFAULT_BACKEND_STATE: BackendAvatarState = {
   mode: 'floating',
   muted: false,
   active_model: {
-    kind: 'holo',
-    name: 'Persephone Holo-Rig (Built-in)',
-    filename: null,
+    kind: 'vrm',
+    name: 'DeepSeek-chan (VRM 1.0)',
+    filename: 'DeepSeek-chan.vrm',
   },
   psfn_lite: {
     connected: false,
@@ -150,6 +150,55 @@ interface SharedController {
   fetchModelBuffer(filename: string): Promise<ArrayBuffer>;
 }
 
+const DEEPSEEK_CHAN_URL =
+  'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm';
+const DEEPSEEK_CHAN_SHA256 =
+  '9fa455e48ee2271dc7c2b62f2f2edcd47709406ca89067b6f544979589958f42';
+const CLIPS_CDN_BASE =
+  'https://raw.githubusercontent.com/axAilotl/hermes-psfn-avatar/main/clips';
+
+const memoryModelCache = new Map<string, Promise<ArrayBuffer>>();
+
+async function readIdbModelCache(key: string): Promise<ArrayBuffer | null> {
+  if (typeof indexedDB === 'undefined') return null;
+  try {
+    const { promise: openP, resolve: openRes, reject: openRej } = Promise.withResolvers<IDBDatabase>();
+    const req = indexedDB.open('hermes-psfn-avatar-vrm-cache', 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore('models');
+    };
+    req.onsuccess = () => openRes(req.result);
+    req.onerror = () => openRej(req.error);
+    const db = await openP;
+    const { promise: getP, resolve: getRes, reject: getRej } = Promise.withResolvers<ArrayBuffer | null>();
+    const tx = db.transaction('models', 'readonly');
+    const getReq = tx.objectStore('models').get(key);
+    getReq.onsuccess = () => getRes(getReq.result instanceof ArrayBuffer ? getReq.result : null);
+    getReq.onerror = () => getRej(getReq.error);
+    return await getP;
+  } catch {
+    return null;
+  }
+}
+
+async function writeIdbModelCache(key: string, buf: ArrayBuffer): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  try {
+    const { promise: openP, resolve: openRes, reject: openRej } = Promise.withResolvers<IDBDatabase>();
+    const req = indexedDB.open('hermes-psfn-avatar-vrm-cache', 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore('models');
+    };
+    req.onsuccess = () => openRes(req.result);
+    req.onerror = () => openRej(req.error);
+    const db = await openP;
+    const tx = db.transaction('models', 'readwrite');
+    tx.objectStore('models').put(buf, key);
+  } catch {
+    // Ignore IndexedDB quota errors
+  }
+}
+
 function createSharedController(ctx: {
   rest: RestFn;
   storage: { get<T>(k: string, d: T): T; set(k: string, v: unknown): void };
@@ -163,6 +212,12 @@ function createSharedController(ctx: {
     mode: ctx.storage.get<BackendAvatarState['mode']>('mode', 'floating'),
   };
   let models: ModelRecord[] = [
+    {
+      id: 'file:DeepSeek-chan.vrm',
+      kind: 'vrm',
+      name: 'DeepSeek-chan (VRM 1.0)',
+      filename: 'DeepSeek-chan.vrm',
+    },
     {
       id: 'builtin:holo',
       kind: 'holo',
@@ -256,6 +311,15 @@ function createSharedController(ctx: {
           filename: null,
         },
       });
+    } else if (idOrFilename === 'file:DeepSeek-chan.vrm' || idOrFilename === 'DeepSeek-chan.vrm') {
+      mergeServerState({
+        ...state,
+        active_model: {
+          kind: 'vrm',
+          name: 'DeepSeek-chan (VRM 1.0)',
+          filename: 'DeepSeek-chan.vrm',
+        },
+      });
     }
     try {
       const res = await ctx.rest<{ ok?: boolean; state?: unknown }>('/models/select', {
@@ -325,31 +389,84 @@ function createSharedController(ctx: {
     if (clips.length > 0) return clips;
     try {
       const res = await ctx.rest<{ ok?: boolean; clips?: ClipManifestEntry[] }>('/clips');
-      if (Array.isArray(res?.clips)) {
+      if (Array.isArray(res?.clips) && res.clips.length > 0) {
         clips = res.clips;
         emit();
         return clips;
       }
     } catch {
-      // Fallback
+      // Fallback to pinned GitHub raw clips manifest when backend route is not mounted yet
+    }
+    try {
+      const resp = await fetch(`${CLIPS_CDN_BASE}/clips.json`);
+      if (resp.ok) {
+        const list = (await resp.json()) as ClipManifestEntry[];
+        if (Array.isArray(list)) {
+          clips = list;
+          emit();
+          return clips;
+        }
+      }
+    } catch {
+      // Offline fallback
     }
     return [];
   }
 
   async function fetchClip(clipUrl: string): Promise<BakedMotionClip> {
     const filename = clipUrl.split('/').pop() ?? clipUrl;
-    return await ctx.rest<BakedMotionClip>(`/clips/${encodeURIComponent(filename)}`);
+    try {
+      return await ctx.rest<BakedMotionClip>(`/clips/${encodeURIComponent(filename)}`);
+    } catch {
+      const resp = await fetch(`${CLIPS_CDN_BASE}/${encodeURIComponent(filename)}`);
+      if (!resp.ok) throw new Error(`Clip fetch failed: ${filename}`);
+      return (await resp.json()) as BakedMotionClip;
+    }
   }
 
   async function fetchModelBuffer(filename: string): Promise<ArrayBuffer> {
     if (localBuffer && localBuffer.name === filename) {
       return localBuffer.buffer;
     }
-    const resp = await fetch(
-      `/api/plugins/${PLUGIN_ID}/models/file/${encodeURIComponent(filename)}`,
-    );
-    if (!resp.ok) throw new Error(`Failed to fetch model ${filename}`);
-    return await resp.arrayBuffer();
+    const existingPromise = memoryModelCache.get(filename);
+    if (existingPromise) return await existingPromise;
+
+    const loadPromise = (async () => {
+      const cached = await readIdbModelCache(filename);
+      if (cached) return cached;
+
+      if (filename === 'DeepSeek-chan.vrm') {
+        const resp = await fetch(DEEPSEEK_CHAN_URL);
+        if (resp.ok) {
+          const buf = await resp.arrayBuffer();
+          if (typeof crypto !== 'undefined' && crypto.subtle) {
+            const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+            const hex = Array.from(new Uint8Array(hashBuf))
+              .map((b) => b.toString(16).padStart(2, '0'))
+              .join('');
+            if (hex !== DEEPSEEK_CHAN_SHA256) {
+              throw new Error('DeepSeek-chan.vrm SHA-256 verification failed');
+            }
+          }
+          await writeIdbModelCache(filename, buf);
+          return buf;
+        }
+      }
+
+      const resp = await fetch(
+        `/api/plugins/${PLUGIN_ID}/models/file/${encodeURIComponent(filename)}`,
+      );
+      if (!resp.ok) throw new Error(`Failed to fetch model ${filename}`);
+      const buf = await resp.arrayBuffer();
+      await writeIdbModelCache(filename, buf);
+      return buf;
+    })().catch((err) => {
+      memoryModelCache.delete(filename);
+      throw err;
+    });
+
+    memoryModelCache.set(filename, loadPromise);
+    return await loadPromise;
   }
 
   void refreshFromBackend();
@@ -442,7 +559,6 @@ function AvatarStageView({
         onStatus: (info) => setStatusInfo(info),
       });
       stageRef.current = stage;
-      void stage.loadHoloModel();
     } catch (err) {
       setStatusInfo({
         format: 'Unavailable',

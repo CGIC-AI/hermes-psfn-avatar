@@ -161,17 +161,61 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     return h.getNormalizedBoneNode(name as Parameters<typeof h.getNormalizedBoneNode>[0]);
   }
 
+  const customMoodWeights = new Map<string, number>();
+  const MOOD_TO_VRM_PRESET: Readonly<Record<string, 'happy' | 'relaxed' | 'surprised' | 'sad' | 'angry'>> = {
+    admiration: 'happy',
+    amusement: 'happy',
+    anger: 'angry',
+    annoyance: 'angry',
+    approval: 'relaxed',
+    caring: 'relaxed',
+    confusion: 'surprised',
+    curiosity: 'surprised',
+    desire: 'happy',
+    disappointment: 'sad',
+    disapproval: 'angry',
+    disgust: 'angry',
+    embarrassment: 'relaxed',
+    excitement: 'happy',
+    fear: 'sad',
+    gratitude: 'happy',
+    grief: 'sad',
+    joy: 'happy',
+    love: 'happy',
+    nervousness: 'sad',
+    optimism: 'happy',
+    pride: 'happy',
+    realization: 'surprised',
+    relief: 'relaxed',
+    remorse: 'sad',
+    sadness: 'sad',
+    surprise: 'surprised',
+  };
+
   function getExpressionAdapter(): ExpressionAdapter | null {
     if (holoAvatar) return holoAvatar.expressionManager;
     const em = currentVrm?.expressionManager;
     if (!em) return null;
     return {
-      getValue: (name: string) => em.getValue(name) ?? 0,
-      setValue: (name: string, val: number) => em.setValue(name, val),
-      resetValues: () => em.resetValues(),
+      getValue: (name: string) => {
+        const direct = em.getValue(name);
+        if (typeof direct === 'number' && Number.isFinite(direct)) return direct;
+        return customMoodWeights.get(name.toLowerCase()) ?? 0;
+      },
+      setValue: (name: string, val: number) => {
+        em.setValue(name, val);
+        const mapped = MOOD_TO_VRM_PRESET[name.toLowerCase()];
+        if (mapped) {
+          customMoodWeights.set(name.toLowerCase(), val);
+          em.setValue(mapped, Math.max(em.getValue(mapped) ?? 0, val * 0.85));
+        }
+      },
+      resetValues: () => {
+        customMoodWeights.clear();
+        em.resetValues();
+      },
     };
   }
-
   function computeModelBounds(root: Object3D): void {
     root.updateMatrixWorld(true);
     const box = new Box3().setFromObject(root);
@@ -207,12 +251,22 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
 
     const headNode = getBoneNode('head');
     const chestNode = getBoneNode('upperChest') ?? getBoneNode('chest');
+    const hipsNode = getBoneNode('hips');
+    let targetX = modelCenterX;
     let targetY = modelMinY + modelHeight * targetRatioY;
-    if (headNode && chestNode && preset === 'bust') {
+    let targetZ = modelCenterZ;
+    if (headNode && chestNode) {
       const headPos = headNode.getWorldPosition(new Vector3());
       const chestPos = chestNode.getWorldPosition(new Vector3());
       if (Number.isFinite(headPos.y) && Number.isFinite(chestPos.y)) {
-        targetY = chestPos.y * 0.42 + headPos.y * 0.58;
+        targetX = chestPos.x * 0.5 + headPos.x * 0.5;
+        targetZ = chestPos.z * 0.5 + headPos.z * 0.5;
+        if (preset === 'bust') {
+          targetY = chestPos.y * 0.42 + headPos.y * 0.58;
+        } else if (preset === 'waist' && hipsNode) {
+          const hipsPos = hipsNode.getWorldPosition(new Vector3());
+          targetY = hipsPos.y * 0.45 + headPos.y * 0.55;
+        }
       }
     }
 
@@ -227,11 +281,11 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     const cosY = Math.cos(orbitYaw);
 
     camera.position.set(
-      modelCenterX + dist * cosP * sinY,
+      targetX + dist * cosP * sinY,
       targetY + dist * sinP,
-      modelCenterZ + dist * cosP * cosY,
+      targetZ + dist * cosP * cosY,
     );
-    camera.lookAt(modelCenterX, targetY, modelCenterZ);
+    camera.lookAt(targetX, targetY, targetZ);
     camera.updateProjectionMatrix();
   }
 
@@ -421,6 +475,10 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
         ? Math.max(0, 1 - Math.abs(((elapsedSec % 4.4) - 4.1) / 0.11))
         : 0;
       expr.setValue('blink', state.emotionalBase === 'asleep' ? 1 : blink);
+      // Secondary VRM 1.0 vowel visemes during speech
+      const speaking = audioClock.speechTime !== null;
+      expr.setValue('ih', speaking ? Math.max(0, Math.sin(speechPhaseSec * 14.0) * 0.35) : 0);
+      expr.setValue('ou', speaking ? Math.max(0, Math.cos(speechPhaseSec * 11.0) * 0.3) : 0);
     }
     if (companionPlayer) {
       companionPlayer.update(dt, {

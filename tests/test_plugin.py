@@ -201,7 +201,7 @@ def test_dashboard_api_routes() -> None:
 
     del_res = client.delete("/api/plugins/hermes-psfn-avatar/models/file/test_companion.vrm")
     assert del_res.status_code == 200
-    assert del_res.json()["state"]["active_model"]["kind"] == "holo"
+    assert del_res.json()["state"]["active_model"]["filename"] == "DeepSeek-chan.vrm"
 
 
 if __name__ == "__main__":
