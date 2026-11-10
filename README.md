@@ -8,7 +8,7 @@ Built as a standalone plugin for any Hermes Agent user, with a zero-config emoti
 
 - **Floating VTuber Corner Overlay & Dockable Stage Pane**:
   - Sits in any corner of Hermes Desktop (`bottom-right`, `bottom-left`, `top-right`, `top-left`) with a transparent WebGL canvas (`alpha: true`), framed on the character's upper-body bust (`bust`), waist-up (`waist`), or full body (`full`).
-  - Click-through background with interactive anatomical touch zones (`headpat`, `petting`, `cheek boop`, `hug`), drag-to-reposition handle, `Alt+wheel` zoom, and one-click toggle to dock into a right-hand layout pane.
+  - Click-through background with interactive anatomical touch zones (`headpat`, `petting`, `cheek boop`, `hug`), drag-to-reposition on the avatar silhouette, `Shift+drag` or `Right-drag` smooth 360° 3D camera orbit, scroll-wheel zoom, and a persistent hover Mini-HUD with one-click toggle to dock into a right-hand layout pane.
   - Also populates the `overlay` shell slot and `/vrm-avatar` Studio tab in the **Hermes Web Dashboard**.
 - **Works Out of the Box (Built-in 3D Persephone Holo-Rig + Custom `.vrm` / `.glb` Upload)**:
   - Immediately renders an articulated 3D humanoid Holo-Rig with VRM-normalized bones, expressive visor eyes, lip-synced mouth, blush cheeks, halo, and emotion-driven ears & tail before any external `.vrm` file is loaded.
