@@ -442,9 +442,9 @@ REMOTE_MODEL_CATALOG: tuple[dict[str, Any], ...] = (
         "kind": "vrm",
         "name": "Nous-Girl (VRM 0.x)",
         "filename": "Nous-Girl.vrm",
-        "size_bytes": 11491944,
-        "sha256": "2732b6431ceea8cc4da25d3ae416d1ba6ca8255720339c46803e7d9a78a6be5d",
-        "url": "https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/d923c0567622403083f994a249b6a42997bd2049/nous-girl.vrm",
+        "size_bytes": 11491924,
+        "sha256": "34c72ebaf068f3d692c29e5b1878b42e0039f63a2b0679aab18bb365b4abc275",
+        "url": "https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/70bfc01c3bbc105267612f94486e0e7ee1b5a7d6/nous-girl.vrm",
         "source": "CGIC-AI/nous-girl-vrm (Default)",
     },
     {

@@ -163,9 +163,9 @@ export const REMOTE_MODEL_CATALOG: ReadonlyArray<ModelRecord> = [
     kind: 'vrm',
     name: 'Nous-Girl (VRM 0.x)',
     filename: 'Nous-Girl.vrm',
-    size_bytes: 11491944,
-    sha256: '2732b6431ceea8cc4da25d3ae416d1ba6ca8255720339c46803e7d9a78a6be5d',
-    url: 'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/d923c0567622403083f994a249b6a42997bd2049/nous-girl.vrm',
+    size_bytes: 11491924,
+    sha256: '34c72ebaf068f3d692c29e5b1878b42e0039f63a2b0679aab18bb365b4abc275',
+    url: 'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/70bfc01c3bbc105267612f94486e0e7ee1b5a7d6/nous-girl.vrm',
     source: 'CGIC-AI/nous-girl-vrm (Default)',
   },
   {
@@ -595,11 +595,15 @@ function createSharedController(ctx: {
     if (localBuffer && localBuffer.name === filename) {
       return localBuffer.buffer;
     }
-    const existingPromise = memoryModelCache.get(filename);
+    const remoteEntry = REMOTE_MODEL_CATALOG.find((m) => m.filename === filename);
+    const cacheKey = remoteEntry?.sha256
+      ? `${filename}:${remoteEntry.sha256.slice(0, 16)}`
+      : filename;
+    const existingPromise = memoryModelCache.get(cacheKey);
     if (existingPromise) return await existingPromise;
 
     const loadPromise = (async () => {
-      const cached = await readIdbModelCache(filename);
+      const cached = await readIdbModelCache(cacheKey);
       if (cached) return cached;
 
       try {
@@ -608,14 +612,13 @@ function createSharedController(ctx: {
         );
         if (localResp.ok) {
           const buf = await localResp.arrayBuffer();
-          await writeIdbModelCache(filename, buf);
+          await writeIdbModelCache(cacheKey, buf);
           return buf;
         }
       } catch {
         // Fall through to pinned upstream CDN if backend route is unavailable
       }
 
-      const remoteEntry = REMOTE_MODEL_CATALOG.find((m) => m.filename === filename);
       if (remoteEntry && remoteEntry.url) {
         const resp = await fetch(remoteEntry.url);
         if (resp.ok) {
@@ -629,18 +632,18 @@ function createSharedController(ctx: {
               throw new Error(`${filename} SHA-256 verification failed`);
             }
           }
-          await writeIdbModelCache(filename, buf);
+          await writeIdbModelCache(cacheKey, buf);
           return buf;
         }
       }
 
       throw new Error(`Failed to fetch model ${filename}`);
     })().catch((err) => {
-      memoryModelCache.delete(filename);
+      memoryModelCache.delete(cacheKey);
       throw err;
     });
 
-    memoryModelCache.set(filename, loadPromise);
+    memoryModelCache.set(cacheKey, loadPromise);
     return await loadPromise;
   }
 
@@ -1590,7 +1593,7 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
               3rd-party VRM binaries are fetched on demand from commit-pinned URLs, verified via SHA-256, and cached locally in IndexedDB — zero binaries are bundled in the plugin repo. Sources:{' '}
               <a
                 className="underline"
-                href="https://github.com/CGIC-AI/nous-girl-vrm/blob/d923c0567622403083f994a249b6a42997bd2049/LICENSE.md"
+                href="https://github.com/CGIC-AI/nous-girl-vrm/blob/70bfc01c3bbc105267612f94486e0e7ee1b5a7d6/LICENSE.md"
                 rel="noreferrer"
                 target="_blank"
               >

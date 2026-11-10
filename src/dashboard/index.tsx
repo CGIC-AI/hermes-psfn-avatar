@@ -16,7 +16,7 @@ const PLUGIN_ID = 'hermes-psfn-avatar';
 
 const REMOTE_MODEL_URLS: Record<string, string> = {
   'Nous-Girl.vrm':
-    'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/d923c0567622403083f994a249b6a42997bd2049/nous-girl.vrm',
+    'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/70bfc01c3bbc105267612f94486e0e7ee1b5a7d6/nous-girl.vrm',
   'DeepSeek-chan.vrm':
     'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm',
   'aletheia.vrm':
