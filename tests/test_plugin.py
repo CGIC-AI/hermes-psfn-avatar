@@ -104,6 +104,12 @@ def test_register_and_hooks() -> None:
     ctx.hooks["post_tool_call"](tool_name="web_search", is_error=False)
     st = json.loads(plugin_pkg.handle_vrm_avatar_tool({"action": "status"}))["state"]
     assert st["tool_activity"]["phase"] == "completed"
+    assert st["activity"] == "thinking"
+
+    # Mid-turn LLM call that emits tool calls stays in thinking (never talking)
+    ctx.hooks["post_llm_call"](response_text="Let me check that...", tool_calls=[{"name": "read_file"}])
+    st = json.loads(plugin_pkg.handle_vrm_avatar_tool({"action": "status"}))["state"]
+    assert st["activity"] == "thinking"
 
     # Directive parsing in post_llm_call
     ctx.hooks["post_llm_call"](
@@ -114,6 +120,7 @@ def test_register_and_hooks() -> None:
     assert st["reaction"] == "celebrate"
     assert st["clip"] == "Celebrate_Reaction_01.json"
     assert st["speech_text"] == "Shipped!"
+    assert st["activity"] == "idle"
 
     ctx.hooks["on_session_end"]()
     st = json.loads(plugin_pkg.handle_vrm_avatar_tool({"action": "status"}))["state"]

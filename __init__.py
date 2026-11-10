@@ -238,6 +238,7 @@ def register(ctx: Any) -> None:
 
     def on_post_llm_call(**kwargs: Any) -> None:
         reply = str(kwargs.get("response_text") or kwargs.get("content") or kwargs.get("text") or "")
+        has_tools = bool(kwargs.get("tool_calls") or kwargs.get("has_tool_calls"))
         psfn_synced = None
         if bool(ctx.get_config("psfn_lite_bridge", True)):
             psfn_synced = sync_from_psfn_lite()
@@ -249,9 +250,13 @@ def register(ctx: Any) -> None:
                 mood=last.get("mood") or last.get("emotion"),
                 reaction=last.get("reaction") or last.get("action"),
                 camera=last.get("camera"),
-                activity="talking" if reply.strip() else "idle",
+                activity="thinking" if has_tools else "idle",
                 speech_text=last.get("say") or reply[:320],
             )
+            return
+
+        if has_tools:
+            write_state({"activity": "thinking", "reaction": None})
             return
 
         if bool(ctx.get_config("auto_emote", True)) and reply.strip():
@@ -259,7 +264,7 @@ def register(ctx: Any) -> None:
             apply_performance(
                 mood=None if psfn_synced else inferred.get("mood"),
                 reaction=inferred.get("reaction"),
-                activity="talking",
+                activity="idle",
                 speech_text=reply[:320],
             )
 

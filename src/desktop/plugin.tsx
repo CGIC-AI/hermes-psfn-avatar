@@ -570,13 +570,13 @@ function AvatarStageView({
   }, []);
 
   const effectiveActivity: StagePlaybackState['activity'] =
-    state.activity !== 'idle'
-      ? state.activity
-      : awaiting
+    state.activity === 'tool'
+      ? 'tool'
+      : awaiting || busy || state.activity === 'thinking'
         ? 'thinking'
-        : busy
-          ? 'talking'
-          : 'idle';
+        : state.activity === 'talking'
+          ? 'idle'
+          : state.activity;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1594,13 +1594,7 @@ const plugin = {
       }
     });
 
-    // Listen to live gateway streaming & tool events for instant zero-latency lip-sync and reactions
-    ctx.onEvent('message.delta', ({ payload }) => {
-      const text = isRecord(payload) && typeof payload.delta === 'string' ? payload.delta : '';
-      if (text) {
-        void controller.perform({ activity: 'talking', speech_text: text });
-      }
-    });
+    // Reset activity state to idle when turn streaming completes
     ctx.onEvent('message.complete', () => {
       void controller.perform({ activity: 'idle' });
     });

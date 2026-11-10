@@ -115,6 +115,14 @@ test('3D Holo-Rig, VrmClipPlayer, CompanionPlayer mood envelopes, and emotion ma
   companion.update(0.1, { enabled: true });
   assert.equal(holo.expressionManager.getValue('aa') > 0.3, true);
 
+  // Simulate tool use / thinking with no TTS audio: selects Thinking state and closes mouth
+  audio.speechTime = null;
+  audio.speechLevel = 0;
+  companion.setMode('auto');
+  companion.update(0.65, { thinking: true, enabled: true });
+  assert.equal(companion.state, 'Thinking');
+  assert.equal(holo.expressionManager.getValue('aa'), 0);
+
   companion.dispose();
   holo.dispose();
 });

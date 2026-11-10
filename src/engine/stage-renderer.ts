@@ -102,16 +102,14 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
 
   const camera = new PerspectiveCamera(26, 1, 0.05, 50);
 
-  // Audio / syllable cadence clock shared with CompanionPlayer
+  // Audio / live TTS clock shared with CompanionPlayer
   const audioClock: AudioClockAdapter = {
     speechTime: null,
     speechLevel: 0,
   };
-  let speechRemainingSec = 0;
   let speechPhaseSec = 0;
   let smoothedSpeechLevel = 0;
   let speechBrightness = 0.35;
-  let lastSpeechId = -1;
 
   // 3D Gaze Target & Cursor Tracking State
   const lookAtTarget = new Object3D();
@@ -480,9 +478,21 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
       lastAppliedMood = state.mood;
     }
 
+    const isThinkingOrTool = state.activity === 'thinking' || state.activity === 'tool';
+    if (isThinkingOrTool && companionPlayer?.mode === 'preview' && !state.reaction) {
+      companionPlayer.setMode('auto');
+    }
+
+    if (force) {
+      lastAppliedClipFile = state.clipFile;
+      lastAppliedReaction = state.reaction;
+      return;
+    }
+
     if (
       state.clipFile &&
-      (force || state.clipFile !== lastAppliedClipFile || state.reaction !== lastAppliedReaction)
+      !isThinkingOrTool &&
+      (state.clipFile !== lastAppliedClipFile || state.reaction !== lastAppliedReaction)
     ) {
       lastAppliedClipFile = state.clipFile;
       lastAppliedReaction = state.reaction;
@@ -493,20 +503,12 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
   }
 
   function updateSpeechClock(dt: number): void {
-    if (state.speechId !== lastSpeechId && state.speechText.trim().length > 0) {
-      lastSpeechId = state.speechId;
-      // Estimate natural speaking duration from character count (~16 chars/sec, clamped 1.4s..7.0s)
-      const chars = state.speechText.trim().length;
-      speechRemainingSec = Math.max(1.4, Math.min(7.0, chars / 16));
-      speechPhaseSec = 0;
-    }
-    if (state.activity === 'talking' && speechRemainingSec <= 0) {
-      speechRemainingSec = 0.6;
-    }
-
-    // 1. Live TTS audio tap takes priority whenever TTS audio is actively playing
+    // Drive talking animation & mouth visemes exclusively from live TTS audio playback
     const tts = sampleTtsAudio(dt);
     if (tts.speaking && !state.muted) {
+      if (companionPlayer?.mode === 'preview' && !state.reaction) {
+        companionPlayer.setMode('auto');
+      }
       speechPhaseSec += dt;
       audioClock.speechTime = speechPhaseSec;
       const alpha = Math.min(1, Math.max(0.2, dt * 28));
@@ -516,29 +518,15 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
       return;
     }
 
-    // 2. Fallback syllable cadence when streaming text with TTS off
-    if (speechRemainingSec > 0 && !state.muted) {
-      speechRemainingSec = Math.max(0, speechRemainingSec - dt);
-      speechPhaseSec += dt;
-      audioClock.speechTime = speechPhaseSec;
-      const syllable =
-        0.52 +
-        0.32 * Math.sin(speechPhaseSec * Math.PI * 2 * 5.4) +
-        0.22 * Math.sin(speechPhaseSec * Math.PI * 2 * 8.7);
-      smoothedSpeechLevel = Math.max(0.08, Math.min(0.95, syllable));
-      speechBrightness = 0.4 + 0.25 * Math.sin(speechPhaseSec * 12.0);
-      audioClock.speechLevel = smoothedSpeechLevel;
-    } else {
-      smoothedSpeechLevel = Math.max(0, smoothedSpeechLevel - dt * 8);
-      audioClock.speechTime = smoothedSpeechLevel > 0.02 ? speechPhaseSec : null;
-      audioClock.speechLevel = smoothedSpeechLevel > 0.02 ? smoothedSpeechLevel : 0;
-    }
+    smoothedSpeechLevel = Math.max(0, smoothedSpeechLevel - dt * 10);
+    audioClock.speechTime = smoothedSpeechLevel > 0.02 ? speechPhaseSec : null;
+    audioClock.speechLevel = smoothedSpeechLevel > 0.02 ? smoothedSpeechLevel : 0;
   }
 
   function applyCursorGaze(dt: number, expr: ExpressionAdapter | null): void {
     const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const sinceMoveSec = Math.max(0, (nowMs - lastPointerMoveMs) / 1000);
-    const speaking = audioClock.speechTime !== null || state.activity === 'talking';
+    const speaking = audioClock.speechTime !== null;
 
     // Most of the time (and always while speaking), look straight out at the user on the other side of the monitor.
     // Only glance lightly toward the cursor while it is actively moving (within ~1.3s), then return to center.
@@ -603,7 +591,7 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
         if (rest) head.quaternion.copy(rest);
         const speaking = audioClock.speechTime !== null;
         const idlePitch =
-          state.activity === 'thinking'
+          state.activity === 'thinking' || state.activity === 'tool'
             ? -0.1 + Math.sin(elapsedSec * 2.0) * 0.03
             : speaking
               ? Math.sin(elapsedSec * 6.5) * 0.04
