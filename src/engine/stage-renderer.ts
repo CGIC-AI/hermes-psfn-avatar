@@ -10,14 +10,16 @@ import {
   AnimationMixer,
   Box3,
   DirectionalLight,
+  Euler,
   HemisphereLight,
   MathUtils,
+  Object3D,
   PerspectiveCamera,
+  Quaternion,
   Scene,
   SRGBColorSpace,
   Vector3,
   WebGLRenderer,
-  type Object3D,
 } from 'three';
 import { VRM } from '@pixiv/three-vrm';
 import { createCompanionMotion, type CompanionMotionHandle } from './companion-motion.ts';
@@ -30,6 +32,7 @@ import {
 import { VRM_PRESET_FOR_BASE, type EmotionalBase } from './emotion-mapping.ts';
 import { createHoloAvatar, type HoloAvatarHandle } from './holo-avatar.ts';
 import { disposeAvatarScenes, loadAvatarFromArrayBuffer, LocalAvatarError } from './load-avatar.ts';
+import { sampleTtsAudio } from './tts-audio-tap.ts';
 import { VrmClipPlayer, type BakedMotionClip, type ClipFetcher } from './vrm-clip-player.ts';
 
 export type CameraPreset = 'bust' | 'waist' | 'full';
@@ -106,7 +109,38 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
   };
   let speechRemainingSec = 0;
   let speechPhaseSec = 0;
+  let smoothedSpeechLevel = 0;
+  let speechBrightness = 0.35;
   let lastSpeechId = -1;
+
+  // 3D Gaze Target & Cursor Tracking State
+  const lookAtTarget = new Object3D();
+  scene.add(lookAtTarget);
+  const gazeRestQuats = new Map<string, Quaternion>();
+  const scratchEuler = new Euler(0, 0, 0, 'YXZ');
+  const scratchQuat = new Quaternion();
+  const scratchCamRight = new Vector3();
+  const scratchCamUp = new Vector3();
+
+  let pointerClientX = 0;
+  let pointerClientY = 0;
+  let hasPointer = false;
+  let lookX = 0;
+  let lookY = 0;
+  let eyeLookX = 0;
+  let eyeLookY = 0;
+
+  const onWindowPointerMove = (ev: { clientX: number; clientY: number }): void => {
+    if (typeof ev.clientX === 'number' && typeof ev.clientY === 'number') {
+      pointerClientX = ev.clientX;
+      pointerClientY = ev.clientY;
+      hasPointer = true;
+    }
+  };
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('pointermove', onWindowPointerMove, { passive: true });
+    window.addEventListener('mousemove', onWindowPointerMove, { passive: true });
+  }
 
   // Model & animation handles
   let disposed = false;
@@ -345,6 +379,20 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     drawFrame(0);
   }
 
+  function captureGazeRestPose(): void {
+    gazeRestQuats.clear();
+    for (const boneName of ['upperChest', 'neck', 'head', 'leftEye', 'rightEye']) {
+      const node = getBoneNode(boneName);
+      if (node) {
+        gazeRestQuats.set(boneName, node.quaternion.clone());
+      }
+    }
+    if (currentVrm?.lookAt) {
+      currentVrm.lookAt.target = lookAtTarget;
+      currentVrm.lookAt.autoUpdate = true;
+    }
+  }
+
   async function loadHoloModel(): Promise<void> {
     const generation = ++loadGeneration;
     clearCurrentModel();
@@ -353,6 +401,7 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     currentFormat = 'Holo-Rig 3D';
     scene.add(holo.scene);
     computeModelBounds(holo.scene);
+    captureGazeRestPose();
     applyCameraFraming();
     onStatus?.({ format: currentFormat, state: 'Idle' });
     await wireClipRuntime(generation);
@@ -389,6 +438,7 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     }
 
     computeModelBounds(gltf.scene);
+    captureGazeRestPose();
     applyCameraFraming();
     onStatus?.({ format: currentFormat, state: 'Loaded' });
     await wireClipRuntime(generation);
@@ -447,19 +497,134 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     if (state.activity === 'talking' && speechRemainingSec <= 0) {
       speechRemainingSec = 0.6;
     }
+
+    // 1. Live TTS audio tap takes priority whenever TTS audio is actively playing
+    const tts = sampleTtsAudio(dt);
+    if (tts.speaking && !state.muted) {
+      speechPhaseSec += dt;
+      audioClock.speechTime = speechPhaseSec;
+      const alpha = Math.min(1, Math.max(0.2, dt * 28));
+      smoothedSpeechLevel += (tts.level - smoothedSpeechLevel) * alpha;
+      speechBrightness += (tts.brightness - speechBrightness) * alpha;
+      audioClock.speechLevel = Math.max(0.06, Math.min(1.0, smoothedSpeechLevel));
+      return;
+    }
+
+    // 2. Fallback syllable cadence when streaming text with TTS off
     if (speechRemainingSec > 0 && !state.muted) {
       speechRemainingSec = Math.max(0, speechRemainingSec - dt);
       speechPhaseSec += dt;
       audioClock.speechTime = speechPhaseSec;
-      // Two-harmonic syllable cadence envelope (5.4 Hz + 8.7 Hz) -> realistic vowel opening
       const syllable =
         0.52 +
         0.32 * Math.sin(speechPhaseSec * Math.PI * 2 * 5.4) +
         0.22 * Math.sin(speechPhaseSec * Math.PI * 2 * 8.7);
-      audioClock.speechLevel = Math.max(0.08, Math.min(0.95, syllable));
+      smoothedSpeechLevel = Math.max(0.08, Math.min(0.95, syllable));
+      speechBrightness = 0.4 + 0.25 * Math.sin(speechPhaseSec * 12.0);
+      audioClock.speechLevel = smoothedSpeechLevel;
     } else {
-      audioClock.speechTime = null;
-      audioClock.speechLevel = 0;
+      smoothedSpeechLevel = Math.max(0, smoothedSpeechLevel - dt * 8);
+      audioClock.speechTime = smoothedSpeechLevel > 0.02 ? speechPhaseSec : null;
+      audioClock.speechLevel = smoothedSpeechLevel > 0.02 ? smoothedSpeechLevel : 0;
+    }
+  }
+
+  function applyCursorGaze(dt: number, expr: ExpressionAdapter | null): void {
+    let targetX = 0;
+    let targetY = 0;
+
+    if (hasPointer && typeof window !== 'undefined' && typeof canvas.getBoundingClientRect === 'function') {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        const headAnchorX = rect.left + rect.width * 0.5;
+        const headRatioY =
+          state.cameraPreset === 'bust' ? 0.34 : state.cameraPreset === 'waist' ? 0.26 : 0.18;
+        const headAnchorY = rect.top + rect.height * headRatioY;
+        const spanX = Math.max(220, (window.innerWidth || 800) * 0.38);
+        const spanY = Math.max(180, (window.innerHeight || 600) * 0.38);
+        targetX = MathUtils.clamp((pointerClientX - headAnchorX) / spanX, -1, 1);
+        targetY = MathUtils.clamp((pointerClientY - headAnchorY) / spanY, -1, 1);
+      }
+    }
+
+    const headLerp = dt > 0 ? Math.min(1, dt * 10) : 1;
+    const eyeLerp = dt > 0 ? Math.min(1, dt * 22) : 1;
+    lookX += (targetX - lookX) * headLerp;
+    lookY += (targetY - lookY) * headLerp;
+    eyeLookX += (targetX - eyeLookX) * eyeLerp;
+    eyeLookY += (targetY - eyeLookY) * eyeLerp;
+
+    const dir = currentVrm?.meta?.metaVersion === '0' ? -1 : 1;
+    const upperChest = getBoneNode('upperChest');
+    const neck = getBoneNode('neck');
+    const head = getBoneNode('head');
+    const leftEye = getBoneNode('leftEye');
+    const rightEye = getBoneNode('rightEye');
+
+    if (upperChest) {
+      if (!clipPlayer?.playing) {
+        const rest = gazeRestQuats.get('upperChest');
+        if (rest) upperChest.quaternion.copy(rest);
+      }
+      scratchEuler.set(dir * lookY * 0.06, lookX * 0.09, 0, 'YXZ');
+      upperChest.quaternion.multiply(scratchQuat.setFromEuler(scratchEuler));
+    }
+
+    if (neck) {
+      if (!clipPlayer?.playing) {
+        const rest = gazeRestQuats.get('neck');
+        if (rest) neck.quaternion.copy(rest);
+      }
+      scratchEuler.set(dir * lookY * 0.14, lookX * 0.22, dir * (-lookX * 0.04), 'YXZ');
+      neck.quaternion.multiply(scratchQuat.setFromEuler(scratchEuler));
+    }
+
+    if (head) {
+      if (!clipPlayer?.playing) {
+        const rest = gazeRestQuats.get('head');
+        if (rest) head.quaternion.copy(rest);
+        const speaking = audioClock.speechTime !== null;
+        const idlePitch =
+          state.activity === 'thinking'
+            ? -0.1 + Math.sin(elapsedSec * 2.0) * 0.03
+            : speaking
+              ? Math.sin(elapsedSec * 6.5) * 0.04
+              : Math.sin(elapsedSec * 1.4) * 0.02;
+        const idleYaw = Math.sin(elapsedSec * 1.1) * 0.04;
+        scratchEuler.set(dir * idlePitch, idleYaw, 0, 'YXZ');
+        head.quaternion.multiply(scratchQuat.setFromEuler(scratchEuler));
+      }
+      scratchEuler.set(dir * lookY * 0.24, lookX * 0.34, dir * (-lookX * 0.06), 'YXZ');
+      head.quaternion.multiply(scratchQuat.setFromEuler(scratchEuler));
+    }
+
+    // Eye bone rotation (relative to rest pose so it never accumulates across frames)
+    for (const [eyeName, eyeNode] of [
+      ['leftEye', leftEye],
+      ['rightEye', rightEye],
+    ] as const) {
+      if (!eyeNode) continue;
+      const rest = gazeRestQuats.get(eyeName);
+      if (rest) eyeNode.quaternion.copy(rest);
+      scratchEuler.set(dir * eyeLookY * 0.16, eyeLookX * 0.25, 0, 'YXZ');
+      eyeNode.quaternion.multiply(scratchQuat.setFromEuler(scratchEuler));
+    }
+
+    // Position 3D lookAtTarget on the camera plane in front of the avatar for VRMLookAt
+    scratchCamRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    scratchCamUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    lookAtTarget.position
+      .copy(camera.position)
+      .addScaledVector(scratchCamRight, eyeLookX * 1.2)
+      .addScaledVector(scratchCamUp, -eyeLookY * 0.9);
+    lookAtTarget.updateMatrixWorld(true);
+
+    // Also set lookLeft / lookRight / lookUp / lookDown expressions for morph-based VRM eyes & Holo-Rig
+    if (expr) {
+      expr.setValue('lookRight', Math.max(0, eyeLookX));
+      expr.setValue('lookLeft', Math.max(0, -eyeLookX));
+      expr.setValue('lookUp', Math.max(0, -eyeLookY));
+      expr.setValue('lookDown', Math.max(0, eyeLookY));
     }
   }
 
@@ -469,23 +634,40 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     updateSpeechClock(dt);
 
     const expr = getExpressionAdapter();
-    if (expr) {
-      // Natural periodic blink every 4.4s
-      const blink = state.animated
-        ? Math.max(0, 1 - Math.abs(((elapsedSec % 4.4) - 4.1) / 0.11))
-        : 0;
-      expr.setValue('blink', state.emotionalBase === 'asleep' ? 1 : blink);
-      // Secondary VRM 1.0 vowel visemes during speech
-      const speaking = audioClock.speechTime !== null;
-      expr.setValue('ih', speaking ? Math.max(0, Math.sin(speechPhaseSec * 14.0) * 0.35) : 0);
-      expr.setValue('ou', speaking ? Math.max(0, Math.cos(speechPhaseSec * 11.0) * 0.3) : 0);
-    }
     if (companionPlayer) {
       companionPlayer.update(dt, {
         thinking: state.activity === 'thinking' || state.activity === 'tool',
         listening: state.activity === 'listening',
         enabled: state.animated,
       });
+    }
+
+    if (expr) {
+      // Natural periodic blink every 4.4s
+      const blink = state.animated
+        ? Math.max(0, 1 - Math.abs(((elapsedSec % 4.4) - 4.1) / 0.11))
+        : 0;
+      expr.setValue('blink', state.emotionalBase === 'asleep' ? 1 : blink);
+      // Secondary VRM 1.0 & 0.x vowel visemes driven by live TTS amplitude & brightness
+      const speaking = audioClock.speechTime !== null;
+      const lvl = audioClock.speechLevel;
+      expr.setValue('aa', speaking ? Math.min(1, lvl * 0.95) : 0);
+      expr.setValue(
+        'ih',
+        speaking ? Math.max(0, lvl * speechBrightness * (0.45 + 0.35 * Math.sin(speechPhaseSec * 14.0))) : 0,
+      );
+      expr.setValue(
+        'ou',
+        speaking ? Math.max(0, lvl * (1 - speechBrightness * 0.5) * (0.4 + 0.3 * Math.cos(speechPhaseSec * 11.0))) : 0,
+      );
+      expr.setValue(
+        'ee',
+        speaking ? Math.max(0, lvl * speechBrightness * (0.3 + 0.25 * Math.cos(speechPhaseSec * 17.0))) : 0,
+      );
+      expr.setValue(
+        'oh',
+        speaking ? Math.max(0, lvl * (0.35 + 0.25 * Math.sin(speechPhaseSec * 9.5))) : 0,
+      );
     }
 
     if (!clipPlayer?.playing) {
@@ -498,7 +680,6 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
       const lLower = getBoneNode('leftLowerArm');
       const rLower = getBoneNode('rightLowerArm');
       const chest = getBoneNode('chest');
-      const head = getBoneNode('head');
       if (lUpper) {
         lUpper.rotation.z = dir * (-1.18 + Math.sin(elapsedSec * 1.6) * 0.03);
         lUpper.rotation.x = speaking ? Math.sin(elapsedSec * 5.2) * 0.14 : 0.06;
@@ -515,16 +696,9 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
         chest.rotation.x = Math.sin(elapsedSec * 1.7) * 0.025;
         chest.rotation.y = Math.sin(elapsedSec * 0.8) * 0.04;
       }
-      if (head) {
-        head.rotation.y = Math.sin(elapsedSec * 1.1) * 0.07;
-        head.rotation.x =
-          state.activity === 'thinking'
-            ? -0.12 + Math.sin(elapsedSec * 2.0) * 0.04
-            : speaking
-              ? Math.sin(elapsedSec * 6.5) * 0.05
-              : Math.sin(elapsedSec * 1.4) * 0.025;
-      }
     }
+
+    applyCursorGaze(dt, expr);
     companionMotion?.update(dt);
     gltfMixer?.update(dt);
     holoAvatar?.update(dt, elapsedSec);
@@ -618,6 +792,10 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     dispose(): void {
       if (disposed) return;
       disposed = true;
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener('pointermove', onWindowPointerMove);
+        window.removeEventListener('mousemove', onWindowPointerMove);
+      }
       stopLoop();
       resizeObserver?.disconnect();
       clearCurrentModel();

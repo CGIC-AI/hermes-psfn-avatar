@@ -376,10 +376,18 @@ export function createHoloAvatar(): HoloAvatarHandle {
         if (BLUSH_MOODS[k]) blushWeight = Math.max(blushWeight, w * BLUSH_MOODS[k]!);
       }
 
-      // Eye vertical scale (blink + happy squint + surprised wide)
+      // Eye vertical scale (blink + happy squint + surprised wide) + cursor gaze shift
+      const lookRight = expressions.get('lookright') ?? 0;
+      const lookLeft = expressions.get('lookleft') ?? 0;
+      const lookUp = expressions.get('lookup') ?? 0;
+      const lookDown = expressions.get('lookdown') ?? 0;
+      const gazeOffsetX = (lookRight - lookLeft) * 0.014;
+      const gazeOffsetY = (lookUp - lookDown) * 0.011;
       const eyeOpen = Math.max(0.08, (1 - blink * 0.92) * (1 - posWeight * 0.35 + surprisedWeight * 0.28));
       leftEye.scale.set(1 + posWeight * 0.15, eyeOpen, 1);
       rightEye.scale.set(1 + posWeight * 0.15, eyeOpen, 1);
+      leftEye.position.set(0.044 + gazeOffsetX, 0.11 + gazeOffsetY, 0.112);
+      rightEye.position.set(-0.044 + gazeOffsetX, 0.11 + gazeOffsetY, 0.112);
 
       // Brow angles
       const browTilt = posWeight * 0.18 - negWeight * 0.28 + angryWeight * 0.38;
