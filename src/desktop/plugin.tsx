@@ -155,7 +155,7 @@ const DEEPSEEK_CHAN_URL =
 const DEEPSEEK_CHAN_SHA256 =
   '9fa455e48ee2271dc7c2b62f2f2edcd47709406ca89067b6f544979589958f42';
 const CLIPS_CDN_BASE =
-  'https://raw.githubusercontent.com/axAilotl/hermes-psfn-avatar/main/clips';
+  'https://raw.githubusercontent.com/axAilotl/hermes-psfn-avatar/7b9a7f7f677b2fd25ed889b56e5ec83055202463/clips';
 
 const memoryModelCache = new Map<string, Promise<ArrayBuffer>>();
 
