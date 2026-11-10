@@ -537,6 +537,33 @@ function AvatarStageView({
   });
   const [touchBanner, setTouchBanner] = useState<string | null>(null);
   const [hovered, setHovered] = useState(false);
+  const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleHoverEnter = useCallback(() => {
+    if (hoverLeaveTimerRef.current !== null) {
+      clearTimeout(hoverLeaveTimerRef.current);
+      hoverLeaveTimerRef.current = null;
+    }
+    setHovered(true);
+  }, []);
+
+  const handleHoverLeave = useCallback(() => {
+    if (hoverLeaveTimerRef.current !== null) {
+      clearTimeout(hoverLeaveTimerRef.current);
+    }
+    hoverLeaveTimerRef.current = setTimeout(() => {
+      hoverLeaveTimerRef.current = null;
+      setHovered(false);
+    }, 380);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (hoverLeaveTimerRef.current !== null) {
+        clearTimeout(hoverLeaveTimerRef.current);
+      }
+    };
+  }, []);
 
   const effectiveActivity: StagePlaybackState['activity'] =
     state.activity !== 'idle'
@@ -702,8 +729,8 @@ function AvatarStageView({
 
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={handleHoverEnter}
+      onMouseLeave={handleHoverLeave}
       onWheel={(e) => {
         if (e.altKey || !compactHud) {
           e.preventDefault();
@@ -727,17 +754,42 @@ function AvatarStageView({
         }}
       />
 
+      {/* Active hover bridge connecting the avatar silhouette down to the full width of the Mini-HUD */}
+      {compactHud && hovered && (
+        <div
+          aria-hidden="true"
+          onMouseEnter={handleHoverEnter}
+          onMouseLeave={handleHoverLeave}
+          onPointerDown={(e) => onRegionPointerDown('body', e)}
+          onPointerMove={onRegionPointerMove}
+          onPointerUp={(e) => onRegionPointerUp('body', e)}
+          style={{
+            bottom: 0,
+            cursor: 'grab',
+            left: '2%',
+            pointerEvents: 'auto',
+            position: 'absolute',
+            right: '2%',
+            top: '30%',
+            zIndex: 1,
+          }}
+        />
+      )}
+
       {/* Narrow anatomical silhouette hitboxes so surrounding transparent space clicks through */}
       {interactiveTouch && (
         <div
           style={{
-            inset: '8% 26% 16% 26%',
+            inset: '6% 18% 2% 18%',
             pointerEvents: 'none',
             position: 'absolute',
+            zIndex: 2,
           }}
         >
           <button
             aria-label="Headpat avatar"
+            onMouseEnter={handleHoverEnter}
+            onMouseLeave={handleHoverLeave}
             onPointerDown={(e) => onRegionPointerDown('head', e)}
             onPointerMove={onRegionPointerMove}
             onPointerUp={(e) => onRegionPointerUp('head', e)}
@@ -745,18 +797,20 @@ function AvatarStageView({
               background: 'transparent',
               border: 'none',
               cursor: 'grab',
-              height: '32%',
-              left: '12%',
+              height: '30%',
+              left: '10%',
               pointerEvents: 'auto',
               position: 'absolute',
               top: 0,
-              width: '76%',
+              width: '80%',
             }}
             title="Tap for headpat · Drag to move avatar"
             type="button"
           />
           <button
             aria-label="Boop avatar cheek"
+            onMouseEnter={handleHoverEnter}
+            onMouseLeave={handleHoverLeave}
             onPointerDown={(e) => onRegionPointerDown('cheek', e)}
             onPointerMove={onRegionPointerMove}
             onPointerUp={(e) => onRegionPointerUp('cheek', e)}
@@ -764,18 +818,20 @@ function AvatarStageView({
               background: 'transparent',
               border: 'none',
               cursor: 'grab',
-              height: '24%',
-              left: '16%',
+              height: '22%',
+              left: '14%',
               pointerEvents: 'auto',
               position: 'absolute',
-              top: '32%',
-              width: '68%',
+              top: '30%',
+              width: '72%',
             }}
             title="Tap cheek to boop · Drag to move avatar"
             type="button"
           />
           <button
             aria-label="Interact with avatar torso"
+            onMouseEnter={handleHoverEnter}
+            onMouseLeave={handleHoverLeave}
             onPointerDown={(e) => onRegionPointerDown('body', e)}
             onPointerMove={onRegionPointerMove}
             onPointerUp={(e) => onRegionPointerUp('body', e)}
@@ -783,12 +839,12 @@ function AvatarStageView({
               background: 'transparent',
               border: 'none',
               cursor: 'grab',
-              height: '44%',
-              left: '8%',
+              height: '48%',
+              left: '4%',
               pointerEvents: 'auto',
               position: 'absolute',
-              top: '56%',
-              width: '84%',
+              top: '52%',
+              width: '92%',
             }}
             title="Drag to move avatar · Tap for hug · Shift+drag to orbit 3D view"
             type="button"
@@ -869,20 +925,25 @@ function AvatarStageView({
       {/* Hover Mini-HUD */}
       {compactHud && hovered && (
         <div
+          onMouseEnter={handleHoverEnter}
+          onMouseLeave={handleHoverLeave}
+          onPointerDown={(e) => e.stopPropagation()}
           style={{
             alignItems: 'center',
-            background: 'var(--ui-surface-elevated, rgba(15, 23, 42, 0.9))',
-            border: '1px solid var(--ui-stroke-secondary, rgba(148, 163, 184, 0.3))',
+            background: 'var(--ui-surface-elevated, rgba(15, 23, 42, 0.94))',
+            border: '1px solid var(--ui-stroke-secondary, rgba(148, 163, 184, 0.35))',
             borderRadius: '999px',
             bottom: '6px',
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.35)',
             display: 'flex',
             gap: '4px',
             left: '50%',
-            padding: '3px 8px',
+            padding: '4px 8px',
             pointerEvents: 'auto',
             position: 'absolute',
             transform: 'translateX(-50%)',
-            zIndex: 5,
+            whiteSpace: 'nowrap',
+            zIndex: 6,
           }}
         >
           {(['bust', 'waist', 'full'] as const).map((cam) => (
@@ -898,9 +959,9 @@ function AvatarStageView({
                     ? 'var(--ui-surface-primary, #0f172a)'
                     : 'var(--ui-text-secondary, #cbd5e1)',
                 cursor: 'pointer',
-                fontSize: '10px',
+                fontSize: '10.5px',
                 fontWeight: 600,
-                padding: '1px 6px',
+                padding: '2px 7px',
                 textTransform: 'capitalize',
               }}
               title={`Camera preset: ${cam}`}
@@ -916,8 +977,8 @@ function AvatarStageView({
               border: 'none',
               color: 'var(--ui-text-secondary, #cbd5e1)',
               cursor: 'pointer',
-              fontSize: '10px',
-              padding: '1px 5px',
+              fontSize: '10.5px',
+              padding: '2px 6px',
             }}
             title="Wave hello"
             type="button"
@@ -935,8 +996,8 @@ function AvatarStageView({
               border: 'none',
               color: 'var(--ui-text-secondary, #cbd5e1)',
               cursor: 'pointer',
-              fontSize: '10px',
-              padding: '1px 5px',
+              fontSize: '10.5px',
+              padding: '2px 6px',
             }}
             title={state.mode === 'floating' ? 'Dock into side pane' : 'Pop out as floating corner overlay'}
             type="button"
@@ -950,9 +1011,9 @@ function AvatarStageView({
               border: 'none',
               color: 'var(--ui-accent, #2dd4bf)',
               cursor: 'pointer',
-              fontSize: '10px',
+              fontSize: '10.5px',
               fontWeight: 600,
-              padding: '1px 5px',
+              padding: '2px 6px',
             }}
             title="Open VRM Avatar Studio"
             type="button"
