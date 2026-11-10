@@ -770,8 +770,6 @@ function AvatarStageView({
     format: 'Holo-Rig 3D',
     state: 'Idle',
   });
-  const [touchBanner, setTouchBanner] = useState<string | null>(null);
-  const touchBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hovered, setHovered] = useState(false);
   const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -797,9 +795,6 @@ function AvatarStageView({
     return () => {
       if (hoverLeaveTimerRef.current !== null) {
         clearTimeout(hoverLeaveTimerRef.current);
-      }
-      if (touchBannerTimerRef.current !== null) {
-        clearTimeout(touchBannerTimerRef.current);
       }
     };
   }, []);
@@ -1001,18 +996,11 @@ function AvatarStageView({
       if (!interaction) return;
       const reactionCopy = REACTION_COPY[interaction.kind as TouchStimulusKind];
       const mapped = TOUCH_TO_REACTION_CLIP[interaction.kind as TouchStimulusKind];
-      if (touchBannerTimerRef.current !== null) {
-        clearTimeout(touchBannerTimerRef.current);
-      }
-      setTouchBanner(reactionCopy);
       void controller.perform({
         mood: mapped.mood,
         reaction: mapped.reaction,
+        say: reactionCopy,
       });
-      touchBannerTimerRef.current = setTimeout(() => {
-        touchBannerTimerRef.current = null;
-        setTouchBanner(null);
-      }, 2200);
     },
     [canDragOverlay, controller, onOverlayDragDelta],
   );
@@ -1166,32 +1154,8 @@ function AvatarStageView({
         </div>
       )}
 
-      {/* Touch reaction heart / status toast */}
-      {touchBanner && (
-        <div
-          style={{
-            background: 'var(--ui-surface-elevated, rgba(15, 23, 42, 0.88))',
-            border: '1px solid var(--ui-accent, #2dd4bf)',
-            borderRadius: '999px',
-            color: 'var(--ui-text-primary, #f8fafc)',
-            fontSize: '11px',
-            fontWeight: 600,
-            left: '50%',
-            padding: '2px 10px',
-            pointerEvents: 'none',
-            position: 'absolute',
-            top: '8px',
-            transform: 'translateX(-50%)',
-            whiteSpace: 'nowrap',
-            zIndex: 4,
-          }}
-        >
-          {touchBanner}
-        </div>
-      )}
-
-      {/* Speech / Activity Bubble (only visible during active thinking/tool use or brief speech text) */}
-      {(state.speech_text || effectiveActivity !== 'idle') && !touchBanner && (
+      {/* Emotion / Activity / Speech Bubble (shows mood tag + reaction text, then auto-fades out after 3.2s) */}
+      {(state.mood !== 'neutral' || state.speech_text || effectiveActivity !== 'idle') && (
         <div
           style={{
             background: 'var(--ui-surface-elevated, rgba(15, 23, 42, 0.86))',
@@ -1209,19 +1173,18 @@ function AvatarStageView({
             zIndex: 3,
           }}
         >
-          {effectiveActivity !== 'idle' && (
-            <div
-              style={{
-                color: 'var(--ui-accent, #2dd4bf)',
-                fontSize: '9.5px',
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-              }}
-            >
-              {effectiveActivity}
-            </div>
-          )}
+          <div
+            style={{
+              color: 'var(--ui-accent, #2dd4bf)',
+              fontSize: '9.5px',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {effectiveActivity} · {state.mood}
+            {state.psfn_lite?.connected ? ' · PSFN' : ''}
+          </div>
           {state.speech_text && (
             <div
               style={{
