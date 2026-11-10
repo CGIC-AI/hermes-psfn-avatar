@@ -1,0 +1,470 @@
+[
+  {
+    "name": "Idle · relaxed stance (8s)",
+    "url": "./clips/Neutral_Idle_01.json",
+    "state": "Idle",
+    "expression": "Neutral",
+    "loop": true
+  },
+  {
+    "name": "Talking · original gestures (6s)",
+    "url": "./clips/Neutral_Talking_01.json",
+    "state": "Talking",
+    "expression": "Neutral",
+    "loop": true
+  },
+  {
+    "name": "Talking · open palms (8s)",
+    "url": "./clips/Neutral_Talking_02.json",
+    "state": "Talking",
+    "expression": "Neutral",
+    "loop": true,
+    "tags": [
+      "explaining",
+      "approval"
+    ],
+    "sourceId": "Neutral_Talking_02"
+  },
+  {
+    "name": "Talking · restrained gestures (8s)",
+    "url": "./clips/Neutral_Talking_03.json",
+    "state": "Talking",
+    "expression": "Neutral",
+    "loop": true,
+    "tags": [
+      "caring",
+      "reassurance"
+    ],
+    "sourceId": "Neutral_Talking_03"
+  },
+  {
+    "name": "Talking · animated explanation (8s)",
+    "url": "./clips/Neutral_Talking_04.json",
+    "state": "Talking",
+    "expression": "Neutral",
+    "loop": true,
+    "tags": [
+      "excitement",
+      "optimism"
+    ],
+    "sourceId": "Neutral_Talking_04"
+  },
+  {
+    "name": "Thinking · weighing an idea (3s)",
+    "url": "./clips/Neutral_Thinking_04.json",
+    "state": "Thinking",
+    "expression": "Neutral",
+    "loop": true,
+    "tags": [
+      "curiosity",
+      "confusion"
+    ],
+    "sourceId": "Neutral_Thinking_04"
+  },
+  {
+    "name": "Listening · gentle nods (8s)",
+    "url": "./clips/Neutral_Listening_03.json",
+    "state": "Listening",
+    "expression": "Neutral",
+    "loop": true,
+    "tags": [
+      "approval",
+      "caring"
+    ],
+    "sourceId": "Neutral_Listening_03"
+  },
+  {
+    "name": "Listening · leaning in (8s)",
+    "url": "./clips/Neutral_Listening_01.json",
+    "state": "Listening",
+    "expression": "Neutral",
+    "loop": true,
+    "tags": [
+      "approval",
+      "caring"
+    ],
+    "sourceId": "Neutral_Listening_01"
+  },
+  {
+    "name": "Reaction · wave hello (3.2s)",
+    "url": "./clips/Wave_Reaction_01.json",
+    "state": "Reaction",
+    "expression": "Neutral",
+    "loop": false,
+    "tags": [
+      "greeting",
+      "joy"
+    ],
+    "sourceId": "Wave_Reaction_01"
+  },
+  {
+    "name": "Reaction · acknowledging tilt (5s)",
+    "url": "./clips/Nod_Reaction_01.json",
+    "state": "Reaction",
+    "expression": "Neutral",
+    "loop": false,
+    "tags": [
+      "approval",
+      "realization"
+    ],
+    "sourceId": "Nod_Reaction_01"
+  },
+  {
+    "name": "Reaction · palms-up shrug (3s)",
+    "url": "./clips/Shrug_Reaction_02.json",
+    "state": "Reaction",
+    "expression": "Neutral",
+    "loop": false,
+    "tags": [
+      "confusion",
+      "uncertainty"
+    ],
+    "sourceId": "Shrug_Reaction_02"
+  },
+  {
+    "name": "Reaction · overhead cheer (4.6s)",
+    "url": "./clips/Celebrate_Reaction_01.json",
+    "state": "Reaction",
+    "expression": "Neutral",
+    "loop": false,
+    "tags": [
+      "excitement",
+      "joy",
+      "pride"
+    ],
+    "sourceId": "Celebrate_Reaction_01"
+  },
+  {
+    "name": "Reaction · surprised hands (4.7s)",
+    "url": "./clips/Surprise_Reaction_01.json",
+    "state": "Reaction",
+    "expression": "Neutral",
+    "loop": false,
+    "tags": [
+      "surprise",
+      "realization"
+    ],
+    "sourceId": "Surprise_Reaction_01"
+  },
+  {
+    "name": "Reaction · thankful bow (3.5s)",
+    "url": "./clips/Thanks_Reaction_01.json",
+    "state": "Reaction",
+    "expression": "Neutral",
+    "loop": false,
+    "tags": [
+      "gratitude",
+      "admiration"
+    ],
+    "sourceId": "Thanks_Reaction_01"
+  },
+  {
+    "name": "Reaction · reach upward (4.5s)",
+    "url": "./clips/Reach_Reaction_01.json",
+    "state": "Reaction",
+    "expression": "Neutral",
+    "loop": false,
+    "tags": [
+      "reach",
+      "attention"
+    ],
+    "sourceId": "Offer_Reaction_02"
+  },
+  {
+    "name": "Admiration · impressed open hands (4.2s)",
+    "url": "./clips/Admiration_Mood_01.json",
+    "state": "Mood",
+    "expression": "admiration",
+    "loop": false,
+    "tags": [
+      "admiration"
+    ],
+    "sourceId": "Admiration_Mood_01"
+  },
+  {
+    "name": "Amusement · hearty laugh (6s)",
+    "url": "./clips/Amusement_Mood_01.json",
+    "state": "Mood",
+    "expression": "amusement",
+    "loop": false,
+    "tags": [
+      "amusement"
+    ],
+    "sourceId": "Amusement_Mood_01"
+  },
+  {
+    "name": "Anger · emphatic downward gesture (3.2s)",
+    "url": "./clips/Anger_Mood_01.json",
+    "state": "Mood",
+    "expression": "anger",
+    "loop": false,
+    "tags": [
+      "anger"
+    ],
+    "sourceId": "Anger_Mood_01"
+  },
+  {
+    "name": "Annoyance · impatient glance away (4.2s)",
+    "url": "./clips/Annoyance_Mood_01.json",
+    "state": "Mood",
+    "expression": "annoyance",
+    "loop": false,
+    "tags": [
+      "annoyance"
+    ],
+    "sourceId": "Annoyance_Mood_01"
+  },
+  {
+    "name": "Approval · acknowledging gesture (3s)",
+    "url": "./clips/Approval_Mood_02.json",
+    "state": "Mood",
+    "expression": "approval",
+    "loop": false,
+    "tags": [
+      "approval"
+    ],
+    "sourceId": "Approval_Mood_02"
+  },
+  {
+    "name": "Caring · reassuring palms (3.4s)",
+    "url": "./clips/Caring_Mood_01.json",
+    "state": "Mood",
+    "expression": "caring",
+    "loop": false,
+    "tags": [
+      "caring"
+    ],
+    "sourceId": "Caring_Mood_01"
+  },
+  {
+    "name": "Confusion · questioning shrug (3.2s)",
+    "url": "./clips/Confusion_Mood_01.json",
+    "state": "Mood",
+    "expression": "confusion",
+    "loop": false,
+    "tags": [
+      "confusion"
+    ],
+    "sourceId": "Confusion_Mood_01"
+  },
+  {
+    "name": "Curiosity · inspecting an open hand (4.2s)",
+    "url": "./clips/Curiosity_Mood_02.json",
+    "state": "Mood",
+    "expression": "curiosity",
+    "loop": false,
+    "tags": [
+      "curiosity"
+    ],
+    "sourceId": "Curiosity_Mood_02"
+  },
+  {
+    "name": "Desire · reaching hopefully (4.6s)",
+    "url": "./clips/Desire_Mood_01.json",
+    "state": "Mood",
+    "expression": "desire",
+    "loop": false,
+    "tags": [
+      "desire"
+    ],
+    "sourceId": "Desire_Mood_01"
+  },
+  {
+    "name": "Disappointment · dropping open hands (3.5s)",
+    "url": "./clips/Disappointment_Mood_01.json",
+    "state": "Mood",
+    "expression": "disappointment",
+    "loop": false,
+    "tags": [
+      "disappointment"
+    ],
+    "sourceId": "Disappointment_Mood_01"
+  },
+  {
+    "name": "Disapproval · firm stop gesture (3.5s)",
+    "url": "./clips/Disapproval_Mood_02.json",
+    "state": "Mood",
+    "expression": "disapproval",
+    "loop": false,
+    "tags": [
+      "disapproval"
+    ],
+    "sourceId": "Disapproval_Mood_02"
+  },
+  {
+    "name": "Disgust · recoiling block (3.2s)",
+    "url": "./clips/Disgust_Mood_01.json",
+    "state": "Mood",
+    "expression": "disgust",
+    "loop": false,
+    "tags": [
+      "disgust"
+    ],
+    "sourceId": "Disgust_Mood_01"
+  },
+  {
+    "name": "Embarrassment · hiding the face (4s)",
+    "url": "./clips/Embarrassment_Mood_01.json",
+    "state": "Mood",
+    "expression": "embarrassment",
+    "loop": false,
+    "tags": [
+      "embarrassment"
+    ],
+    "sourceId": "Embarrassment_Mood_01"
+  },
+  {
+    "name": "Excitement · energetic cheer (3s)",
+    "url": "./clips/Excitement_Mood_01.json",
+    "state": "Mood",
+    "expression": "excitement",
+    "loop": false,
+    "tags": [
+      "excitement"
+    ],
+    "sourceId": "Excitement_Mood_01"
+  },
+  {
+    "name": "Fear · guarded crouch (6s)",
+    "url": "./clips/Fear_Mood_01.json",
+    "state": "Mood",
+    "expression": "fear",
+    "loop": false,
+    "tags": [
+      "fear"
+    ],
+    "sourceId": "Fear_Mood_01"
+  },
+  {
+    "name": "Gratitude · appreciative bow (3.5s)",
+    "url": "./clips/Gratitude_Mood_01.json",
+    "state": "Mood",
+    "expression": "gratitude",
+    "loop": false,
+    "tags": [
+      "gratitude"
+    ],
+    "sourceId": "Gratitude_Mood_01"
+  },
+  {
+    "name": "Grief · heavy bowed posture (5s)",
+    "url": "./clips/Grief_Mood_01.json",
+    "state": "Mood",
+    "expression": "grief",
+    "loop": false,
+    "tags": [
+      "grief"
+    ],
+    "sourceId": "Grief_Mood_01"
+  },
+  {
+    "name": "Joy · happy swaying gesture (5s)",
+    "url": "./clips/Joy_Mood_01.json",
+    "state": "Mood",
+    "expression": "joy",
+    "loop": false,
+    "tags": [
+      "joy"
+    ],
+    "sourceId": "Joy_Mood_01"
+  },
+  {
+    "name": "Love · warm forward invitation (5.2s)",
+    "url": "./clips/Love_Mood_01.json",
+    "state": "Mood",
+    "expression": "love",
+    "loop": false,
+    "tags": [
+      "love"
+    ],
+    "sourceId": "Love_Mood_01"
+  },
+  {
+    "name": "Nervousness · anxious hand fidget (3.5s)",
+    "url": "./clips/Nervousness_Mood_01.json",
+    "state": "Mood",
+    "expression": "nervousness",
+    "loop": false,
+    "tags": [
+      "nervousness"
+    ],
+    "sourceId": "Nervousness_Mood_01"
+  },
+  {
+    "name": "Optimism · hopeful open pose (6s)",
+    "url": "./clips/Optimism_Mood_01.json",
+    "state": "Mood",
+    "expression": "optimism",
+    "loop": false,
+    "tags": [
+      "optimism"
+    ],
+    "sourceId": "Optimism_Mood_01"
+  },
+  {
+    "name": "Pride · confident presentation (4s)",
+    "url": "./clips/Pride_Mood_01.json",
+    "state": "Mood",
+    "expression": "pride",
+    "loop": false,
+    "tags": [
+      "pride"
+    ],
+    "sourceId": "Pride_Mood_01"
+  },
+  {
+    "name": "Realization · sudden idea (3.2s)",
+    "url": "./clips/Realization_Mood_01.json",
+    "state": "Mood",
+    "expression": "realization",
+    "loop": false,
+    "tags": [
+      "realization"
+    ],
+    "sourceId": "Realization_Mood_01"
+  },
+  {
+    "name": "Relief · releasing tension (4.5s)",
+    "url": "./clips/Relief_Mood_01.json",
+    "state": "Mood",
+    "expression": "relief",
+    "loop": false,
+    "tags": [
+      "relief"
+    ],
+    "sourceId": "Relief_Mood_01"
+  },
+  {
+    "name": "Remorse · apologetic bow (3.2s)",
+    "url": "./clips/Remorse_Mood_01.json",
+    "state": "Mood",
+    "expression": "remorse",
+    "loop": false,
+    "tags": [
+      "remorse"
+    ],
+    "sourceId": "Remorse_Mood_01"
+  },
+  {
+    "name": "Sadness · folded arms and lowered head (5s)",
+    "url": "./clips/Sadness_Mood_03.json",
+    "state": "Mood",
+    "expression": "sadness",
+    "loop": false,
+    "tags": [
+      "sadness"
+    ],
+    "sourceId": "Sadness_Mood_03"
+  },
+  {
+    "name": "Surprise · startled open hands (3.5s)",
+    "url": "./clips/Surprise_Mood_01.json",
+    "state": "Mood",
+    "expression": "surprise",
+    "loop": false,
+    "tags": [
+      "surprise"
+    ],
+    "sourceId": "Surprise_Mood_01"
+  }
+]

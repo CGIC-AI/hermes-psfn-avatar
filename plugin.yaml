@@ -1,0 +1,44 @@
+name: hermes-psfn-avatar
+version: "0.1.0"
+description: "3D VRM VTuber & companion avatar overlay for Hermes Desktop and Web Dashboard: transparent corner half-torso 3D stage with Three.js + @pixiv/three-vrm, 42 baked ARDY humanoid motion clips, 27 GoEmotions mood performances, lip-sync, touch reactions, and optional PSFN Lite continuous emotional-state bridge."
+author: "axAilotl"
+license: "MIT"
+homepage: "https://github.com/axAilotl/hermes-psfn-avatar"
+requires_hermes: ">=0.21.5"
+tags:
+  - desktop
+  - dashboard
+  - vrm
+  - avatar
+  - vtuber
+  - threejs
+  - psfn
+provides_tools:
+  - vrm_avatar
+provides_hooks:
+  - pre_llm_call
+  - post_llm_call
+  - pre_tool_call
+  - post_tool_call
+  - on_session_end
+config_schema:
+  auto_emote:
+    type: bool
+    default: true
+    description: "Automatically infer and animate avatar mood and body gestures from assistant replies and tool activity."
+  psfn_lite_bridge:
+    type: bool
+    default: true
+    description: "Automatically sync continuous VAD + 28 GoEmotions state from PSFN Lite when configured in the active profile."
+  default_camera:
+    type: str
+    default: "bust"
+    description: "Default VTuber camera framing preset (bust, waist, full)."
+  overlay_corner:
+    type: str
+    default: "bottom-right"
+    description: "Default floating overlay corner (bottom-right, bottom-left, top-right, top-left)."
+  overlay_scale:
+    type: float
+    default: 1.0
+    description: "Default floating overlay scale multiplier (0.5 to 2.0)."

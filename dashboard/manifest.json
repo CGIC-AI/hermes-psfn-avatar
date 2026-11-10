@@ -1,0 +1,16 @@
+{
+  "name": "hermes-psfn-avatar",
+  "label": "VRM Avatar",
+  "description": "3D VRM VTuber & companion avatar overlay and motion studio, with 42 ARDY clips and optional PSFN Lite emotion sync.",
+  "icon": "Sparkles",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/vrm-avatar",
+    "position": "after:skills",
+    "hidden": false
+  },
+  "slots": ["overlay"],
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}

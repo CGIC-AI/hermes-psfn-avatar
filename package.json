@@ -1,0 +1,21 @@
+{
+  "name": "hermes-psfn-avatar",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "3D VRM VTuber & companion avatar overlay for Hermes Desktop and Web Dashboard, with baked ARDY humanoid motion clips, lip-sync, and optional PSFN Lite emotional continuity bridge.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test:js": "node --test tests/engine.test.mjs",
+    "test:py": "/home/vega/.hermes/tools/python-3.14.9+20261021-linux-x64/bin/python3 tests/test_plugin.py",
+    "test": "npm run build && npm run test:js && npm run test:py"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "3.5.5",
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
