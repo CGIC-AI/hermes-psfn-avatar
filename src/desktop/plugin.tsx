@@ -61,6 +61,10 @@ interface ModelRecord {
   readonly name: string;
   readonly filename: string | null;
   readonly size_bytes?: number;
+  readonly sha256?: string;
+  readonly url?: string;
+  readonly source?: string;
+  readonly cached?: boolean;
 }
 
 interface PsfnLiteStatus {
@@ -150,16 +154,101 @@ interface SharedController {
   fetchModelBuffer(filename: string): Promise<ArrayBuffer>;
 }
 
-const NOUS_GIRL_URL =
-  'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/d923c0567622403083f994a249b6a42997bd2049/nous-girl.vrm';
-const NOUS_GIRL_SHA256 =
-  '2732b6431ceea8cc4da25d3ae416d1ba6ca8255720339c46803e7d9a78a6be5d';
-const DEEPSEEK_CHAN_URL =
-  'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm';
-const DEEPSEEK_CHAN_SHA256 =
-  '9fa455e48ee2271dc7c2b62f2f2edcd47709406ca89067b6f544979589958f42';
 const CLIPS_CDN_BASE =
   'https://raw.githubusercontent.com/axAilotl/hermes-psfn-avatar/7b9a7f7f677b2fd25ed889b56e5ec83055202463/clips';
+
+export const REMOTE_MODEL_CATALOG: ReadonlyArray<ModelRecord> = [
+  {
+    id: 'file:Nous-Girl.vrm',
+    kind: 'vrm',
+    name: 'Nous-Girl (VRM 0.x)',
+    filename: 'Nous-Girl.vrm',
+    size_bytes: 11491944,
+    sha256: '2732b6431ceea8cc4da25d3ae416d1ba6ca8255720339c46803e7d9a78a6be5d',
+    url: 'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/d923c0567622403083f994a249b6a42997bd2049/nous-girl.vrm',
+    source: 'CGIC-AI/nous-girl-vrm (Default)',
+  },
+  {
+    id: 'file:DeepSeek-chan.vrm',
+    kind: 'vrm',
+    name: 'DeepSeek-chan (CC BY-NC-SA 4.0)',
+    filename: 'DeepSeek-chan.vrm',
+    size_bytes: 33616628,
+    sha256: '9fa455e48ee2271dc7c2b62f2f2edcd47709406ca89067b6f544979589958f42',
+    url: 'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm',
+    source: 'tegnike/deepseek-chan-vrm (CC BY-NC-SA 4.0)',
+  },
+  {
+    id: 'file:aletheia.vrm',
+    kind: 'vrm',
+    name: 'Aletheia (Eidoverse)',
+    filename: 'aletheia.vrm',
+    size_bytes: 30976184,
+    sha256: 'c0f4c8bb0b5a0ea1f79171f83b2c1ab9c21121fe9a5f1feb1cf84fe83ce6672c',
+    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/aletheia.vrm',
+    source: 'SkyeShark/eidoverse-video',
+  },
+  {
+    id: 'file:aporia.vrm',
+    kind: 'vrm',
+    name: 'Aporia (Eidoverse)',
+    filename: 'aporia.vrm',
+    size_bytes: 29971076,
+    sha256: '0b0c5dee6485a5a7017abdff6ea8b32cc3ef472f648ea1655ff23cb4740d7b19',
+    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/aporia.vrm',
+    source: 'SkyeShark/eidoverse-video',
+  },
+  {
+    id: 'file:claude.vrm',
+    kind: 'vrm',
+    name: 'Claude (Eidoverse)',
+    filename: 'claude.vrm',
+    size_bytes: 848636,
+    sha256: '883eb1d6c63c7409e1cbebb335509af346e92d046c4c9916ebc7695da4c64073',
+    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude.vrm',
+    source: 'SkyeShark/eidoverse-video',
+  },
+  {
+    id: 'file:claude_suit.vrm',
+    kind: 'vrm',
+    name: 'Claude Suit (Eidoverse)',
+    filename: 'claude_suit.vrm',
+    size_bytes: 10595332,
+    sha256: '7be6286215c0d7e4251633ec741d9f5bde943dc635f05a312ca7d1b45bceaa5d',
+    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_suit.vrm',
+    source: 'SkyeShark/eidoverse-video',
+  },
+  {
+    id: 'file:claude_suit_wardrobe.vrm',
+    kind: 'vrm',
+    name: 'Claude Suit Wardrobe (Eidoverse)',
+    filename: 'claude_suit_wardrobe.vrm',
+    size_bytes: 35444376,
+    sha256: '54a6d71ceefdc44b6688b3174b3a858b006ba526e51a268060080fe3d59cd65a',
+    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_suit_wardrobe.vrm',
+    source: 'SkyeShark/eidoverse-video',
+  },
+  {
+    id: 'file:claude_robot_2k.vrm',
+    kind: 'vrm',
+    name: 'Claude Robot 2K (Eidoverse)',
+    filename: 'claude_robot_2k.vrm',
+    size_bytes: 20852556,
+    sha256: 'e04e19c594ee55d3017360e21bf499c9f56ed13a1deb17cc04e9acf881696ef4',
+    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_robot_2k.vrm',
+    source: 'SkyeShark/eidoverse-video',
+  },
+  {
+    id: 'file:claude_robot.vrm',
+    kind: 'vrm',
+    name: 'Claude Robot 4K (Eidoverse)',
+    filename: 'claude_robot.vrm',
+    size_bytes: 38561864,
+    sha256: 'fbeaa3b4162b4fd6d893b13e4172a9a9e8e78eb964e4ae4a3373c1a5bb2ca2f0',
+    url: 'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_robot.vrm',
+    source: 'SkyeShark/eidoverse-video',
+  },
+];
 
 const memoryModelCache = new Map<string, Promise<ArrayBuffer>>();
 
@@ -235,20 +324,7 @@ function createSharedController(ctx: {
     scale: ctx.storage.get<number>('scale', 1.0),
     mode: ctx.storage.get<BackendAvatarState['mode']>('mode', 'floating'),
   };
-  let models: ModelRecord[] = [
-    {
-      id: 'file:Nous-Girl.vrm',
-      kind: 'vrm',
-      name: 'Nous-Girl (VRM 0.x)',
-      filename: 'Nous-Girl.vrm',
-    },
-    {
-      id: 'file:DeepSeek-chan.vrm',
-      kind: 'vrm',
-      name: 'DeepSeek-chan (CC BY-NC-SA 4.0)',
-      filename: 'DeepSeek-chan.vrm',
-    },
-  ];
+  let models: ModelRecord[] = [...REMOTE_MODEL_CATALOG];
   if (
     initialActiveModel.filename &&
     !models.some((m) => m.filename === initialActiveModel.filename)
@@ -258,6 +334,7 @@ function createSharedController(ctx: {
       kind: initialActiveModel.kind === 'glb' ? 'glb' : 'vrm',
       name: initialActiveModel.name,
       filename: initialActiveModel.filename,
+      source: 'Local Upload',
     });
   }
   let clips: ClipManifestEntry[] = [];
@@ -538,16 +615,12 @@ function createSharedController(ctx: {
         // Fall through to pinned upstream CDN if backend route is unavailable
       }
 
-      const remoteCatalog: Record<string, { url: string; sha256: string }> = {
-        'Nous-Girl.vrm': { url: NOUS_GIRL_URL, sha256: NOUS_GIRL_SHA256 },
-        'DeepSeek-chan.vrm': { url: DEEPSEEK_CHAN_URL, sha256: DEEPSEEK_CHAN_SHA256 },
-      };
-      const remoteEntry = remoteCatalog[filename];
-      if (remoteEntry) {
+      const remoteEntry = REMOTE_MODEL_CATALOG.find((m) => m.filename === filename);
+      if (remoteEntry && remoteEntry.url) {
         const resp = await fetch(remoteEntry.url);
         if (resp.ok) {
           const buf = await resp.arrayBuffer();
-          if (typeof crypto !== 'undefined' && crypto.subtle) {
+          if (remoteEntry.sha256 && typeof crypto !== 'undefined' && crypto.subtle) {
             const hashBuf = await crypto.subtle.digest('SHA-256', buf);
             const hex = Array.from(new Uint8Array(hashBuf))
               .map((b) => b.toString(16).padStart(2, '0'))
@@ -1469,10 +1542,10 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
           <div className="rounded-lg border border-(--ui-stroke-secondary) p-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-(--ui-text-secondary)">
-                1. Avatar Model (.vrm / .glb)
+                1. Avatar Model & On-Demand VRM Download Catalog ({models.length})
               </span>
               <label className="cursor-pointer rounded border border-(--ui-accent) px-2.5 py-1 text-xs font-medium text-(--ui-accent)">
-                Load .VRM / .GLB File
+                Load Local .VRM / .GLB
                 <input
                   accept=".vrm,.glb"
                   className="hidden"
@@ -1484,14 +1557,18 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
             {uploadStatus && (
               <div className="mb-2 text-xs text-(--ui-text-tertiary)">{uploadStatus}</div>
             )}
-            <div className="flex flex-wrap gap-1.5">
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {models.map((m) => {
                 const isSelected = Boolean(
                   m.filename && state.active_model?.filename === m.filename,
                 );
+                const sizeMb =
+                  typeof m.size_bytes === 'number' && m.size_bytes > 0
+                    ? `${(m.size_bytes / (1024 * 1024)).toFixed(1)} MB`
+                    : null;
                 return (
                   <button
-                    className="rounded border border-(--ui-stroke-secondary) px-2.5 py-1 text-xs"
+                    className="flex items-center justify-between rounded border border-(--ui-stroke-secondary) px-2.5 py-1.5 text-left text-xs"
                     key={m.id}
                     onClick={() => void controller.selectModel(m.id)}
                     style={{
@@ -1500,22 +1577,44 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
                     }}
                     type="button"
                   >
-                    {m.name}
+                    <span className="truncate font-medium">{m.name}</span>
+                    <span className="ml-2 shrink-0 text-[10px] text-(--ui-text-tertiary)">
+                      {sizeMb ? `${sizeMb} · ` : ''}
+                      {isSelected ? 'Active' : m.cached ? 'Cached' : 'Download'}
+                    </span>
                   </button>
                 );
               })}
             </div>
             <div className="mt-2 text-[11px] text-(--ui-text-tertiary)">
-              Default: <strong>Nous-Girl</strong> (Vega / PSFN assembly, see{' '}
+              3rd-party VRM binaries are fetched on demand from commit-pinned URLs, verified via SHA-256, and cached locally in IndexedDB — zero binaries are bundled in the plugin repo. Sources:{' '}
               <a
                 className="underline"
                 href="https://github.com/CGIC-AI/nous-girl-vrm/blob/d923c0567622403083f994a249b6a42997bd2049/LICENSE.md"
                 rel="noreferrer"
                 target="_blank"
               >
-                CGIC-AI/nous-girl-vrm LICENSE.md
+                CGIC-AI/nous-girl-vrm
+              </a>{' '}
+              (Default) ·{' '}
+              <a
+                className="underline"
+                href="https://github.com/tegnike/deepseek-chan-vrm"
+                rel="noreferrer"
+                target="_blank"
+              >
+                tegnike/deepseek-chan-vrm
+              </a>{' '}
+              (CC BY-NC-SA 4.0) ·{' '}
+              <a
+                className="underline"
+                href="https://github.com/SkyeShark/eidoverse-video/tree/main/eidoverse/assets/vrms"
+                rel="noreferrer"
+                target="_blank"
+              >
+                SkyeShark/eidoverse-video
               </a>
-              ) · <strong>DeepSeek-chan</strong> (character 溟月 by 上善无形 · maid design by ZipZipPipe · 3D model by ニケ, CC BY-NC-SA 4.0).
+              .
             </div>
           </div>
 

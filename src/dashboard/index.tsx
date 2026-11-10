@@ -14,6 +14,27 @@ import type { BakedMotionClip } from '../engine/vrm-clip-player.ts';
 
 const PLUGIN_ID = 'hermes-psfn-avatar';
 
+const REMOTE_MODEL_URLS: Record<string, string> = {
+  'Nous-Girl.vrm':
+    'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/d923c0567622403083f994a249b6a42997bd2049/nous-girl.vrm',
+  'DeepSeek-chan.vrm':
+    'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm',
+  'aletheia.vrm':
+    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/aletheia.vrm',
+  'aporia.vrm':
+    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/aporia.vrm',
+  'claude.vrm':
+    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude.vrm',
+  'claude_suit.vrm':
+    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_suit.vrm',
+  'claude_suit_wardrobe.vrm':
+    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_suit_wardrobe.vrm',
+  'claude_robot_2k.vrm':
+    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_robot_2k.vrm',
+  'claude_robot.vrm':
+    'https://raw.githubusercontent.com/SkyeShark/eidoverse-video/404a00e7db3068af51bd914d61e608e6b8dc9b82/eidoverse/assets/vrms/claude_robot.vrm',
+};
+
 interface DashboardSdk {
   React: {
     createElement: (type: unknown, props: Record<string, unknown> | null, ...children: unknown[]) => unknown;
@@ -158,9 +179,7 @@ function mountDashboardPlugin(): void {
       const stage = stageRef.current;
       if (!stage) return;
       const fallbackUrl =
-        filename === 'DeepSeek-chan.vrm'
-          ? 'https://raw.githubusercontent.com/tegnike/deepseek-chan-vrm/3aceb037df7a8b8126efea89d3a75664d1af868d/DeepSeek-chan.vrm'
-          : 'https://raw.githubusercontent.com/CGIC-AI/nous-girl-vrm/d923c0567622403083f994a249b6a42997bd2049/nous-girl.vrm';
+        REMOTE_MODEL_URLS[filename] ?? REMOTE_MODEL_URLS['Nous-Girl.vrm']!;
       fetch(`${apiBase}/models/file/${encodeURIComponent(filename)}`)
         .then((r) => (r.ok ? r.arrayBuffer() : fetch(fallbackUrl).then((r2) => r2.arrayBuffer())))
         .then((buf) => stage.loadVrmBuffer(buf, modelName))

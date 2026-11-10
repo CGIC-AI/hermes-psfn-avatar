@@ -150,8 +150,8 @@ export class CompanionPlayer {
     const clip = this.library.find((c) => c.url === url && c.state === 'Mood');
     const name = clip?.expression;
     if (!name) return;
-    const base = this.expressions?.getValue?.(name) ?? 0;
-    if (!Number.isFinite(base)) return;
+    // Always return to neutral (base = 0) when a mood clip completes
+    const base = 0;
     let overlay = this.moodOverlays.get(name);
     if (!overlay) {
       overlay = { base, weight: 0, release: null };

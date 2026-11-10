@@ -185,6 +185,9 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
   let lastAppliedMood = 'neutral';
   let lastAppliedClipFile: string | null = null;
   let lastAppliedReaction: string | null = null;
+  let moodHoldSec = 0;
+  let moodPulseWeight = 0;
+  let activePulsePreset: (typeof PRESET_EXPRESSIONS)[number] | null = null;
 
   let rafId: number | null = null;
   let lastFrameMs: number | null = null;
@@ -234,18 +237,43 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     if (holoAvatar) return holoAvatar.expressionManager;
     const em = currentVrm?.expressionManager;
     if (!em) return null;
+    const isVrm0 = currentVrm?.meta?.metaVersion === '0';
     return {
       getValue: (name: string) => {
+        const lower = name.toLowerCase();
+        if (customMoodWeights.has(lower)) {
+          return customMoodWeights.get(lower) ?? 0;
+        }
         const direct = em.getValue(name);
         if (typeof direct === 'number' && Number.isFinite(direct)) return direct;
-        return customMoodWeights.get(name.toLowerCase()) ?? 0;
+        return 0;
       },
       setValue: (name: string, val: number) => {
-        em.setValue(name, val);
-        const mapped = MOOD_TO_VRM_PRESET[name.toLowerCase()];
+        const lower = name.toLowerCase();
+        const clamped = Math.max(0, Math.min(1, Number.isFinite(val) ? val : 0));
+        // On VRM 0.x (VRoid), 'joy'/'happy' is a full-face closed-eye grin blendshape;
+        // scale it down so expressions produce a gentle smile instead of a permanent squint.
+        const directWeight =
+          isVrm0 && (lower === 'happy' || lower === 'joy' || lower === 'relaxed' || lower === 'fun')
+            ? clamped * 0.38
+            : clamped;
+        em.setValue(name, directWeight);
+
+        const mapped = MOOD_TO_VRM_PRESET[lower];
         if (mapped) {
-          customMoodWeights.set(name.toLowerCase(), val);
-          em.setValue(mapped, Math.max(em.getValue(mapped) ?? 0, val * 0.85));
+          if (clamped <= 0.001) {
+            customMoodWeights.delete(lower);
+          } else {
+            customMoodWeights.set(lower, clamped);
+          }
+          let maxForMapped = 0;
+          for (const [k, v] of customMoodWeights) {
+            if (MOOD_TO_VRM_PRESET[k] === mapped && v > maxForMapped) {
+              maxForMapped = v;
+            }
+          }
+          const presetScale = isVrm0 && (mapped === 'happy' || mapped === 'relaxed') ? 0.36 : 0.6;
+          em.setValue(mapped, maxForMapped * presetScale);
         }
       },
       resetValues: () => {
@@ -463,17 +491,28 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
   function applyMoodAndClipTriggers(force = false): void {
     const expr = getExpressionAdapter();
     if (expr) {
-      // Apply VRM preset base expression (happy, relaxed, surprised, sad, angry)
-      const preset = VRM_PRESET_FOR_BASE[state.emotionalBase];
-      for (const name of PRESET_EXPRESSIONS) {
-        expr.setValue(name, name === preset ? 0.65 : 0);
-      }
-      // Also set custom 27-mood expression weight on models/holo-rigs that support it
       if (lastAppliedMood && lastAppliedMood !== state.mood) {
         expr.setValue(lastAppliedMood, 0);
       }
-      if (state.mood && state.mood !== 'neutral') {
-        expr.setValue(state.mood, 0.78);
+      if (force) {
+        // On initial model load, always start with a clean neutral resting face
+        for (const name of PRESET_EXPRESSIONS) {
+          expr.setValue(name, 0);
+        }
+        if (state.mood && state.mood !== 'neutral') {
+          expr.setValue(state.mood, 0);
+        }
+        moodHoldSec = 0;
+        moodPulseWeight = 0;
+        activePulsePreset = null;
+      } else if (state.mood !== lastAppliedMood || state.reaction !== lastAppliedReaction) {
+        const preset = VRM_PRESET_FOR_BASE[state.emotionalBase];
+        if (preset && state.mood !== 'neutral') {
+          activePulsePreset = preset;
+          moodHoldSec = 2.4;
+        } else {
+          moodHoldSec = 0;
+        }
       }
       lastAppliedMood = state.mood;
     }
@@ -649,13 +688,32 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     }
 
     if (expr) {
+      const speaking = audioClock.speechTime !== null;
+      // Smoothly pulse and decay facial mood preset back to neutral so the face never gets stuck in a smile
+      if (moodHoldSec > 0 && !speaking) {
+        moodHoldSec = Math.max(0, moodHoldSec - dt);
+        moodPulseWeight = Math.min(1, moodPulseWeight + (dt > 0 ? dt * 4.0 : 1));
+      } else {
+        moodHoldSec = 0;
+        moodPulseWeight = Math.max(0, moodPulseWeight - (dt > 0 ? dt * 2.5 : 1));
+      }
+      for (const name of PRESET_EXPRESSIONS) {
+        if (name === activePulsePreset && moodPulseWeight > 0.001) {
+          expr.setValue(name, moodPulseWeight * 0.45);
+        } else if (customMoodWeights.size === 0) {
+          expr.setValue(name, 0);
+        }
+      }
+      if (moodPulseWeight <= 0.001) {
+        activePulsePreset = null;
+      }
+
       // Natural periodic blink every 4.4s
       const blink = state.animated
         ? Math.max(0, 1 - Math.abs(((elapsedSec % 4.4) - 4.1) / 0.11))
         : 0;
       expr.setValue('blink', state.emotionalBase === 'asleep' ? 1 : blink);
       // Secondary VRM 1.0 & 0.x vowel visemes driven by live TTS amplitude & brightness
-      const speaking = audioClock.speechTime !== null;
       const lvl = audioClock.speechLevel;
       expr.setValue('aa', speaking ? Math.min(1, lvl * 0.95) : 0);
       expr.setValue(

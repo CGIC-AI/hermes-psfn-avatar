@@ -169,6 +169,25 @@ def test_dashboard_api_routes() -> None:
     res = client.get("/api/plugins/hermes-psfn-avatar/state")
     assert res.status_code == 200
     assert res.json()["ok"] is True
+    catalog_filenames = {m["filename"] for m in res.json()["models"]}
+    assert {
+        "Nous-Girl.vrm",
+        "DeepSeek-chan.vrm",
+        "aletheia.vrm",
+        "aporia.vrm",
+        "claude.vrm",
+        "claude_suit.vrm",
+        "claude_suit_wardrobe.vrm",
+        "claude_robot_2k.vrm",
+        "claude_robot.vrm",
+    }.issubset(catalog_filenames)
+
+    sel_res = client.post(
+        "/api/plugins/hermes-psfn-avatar/models/select",
+        json={"id": "file:aletheia.vrm", "filename": "aletheia.vrm"},
+    )
+    assert sel_res.status_code == 200
+    assert sel_res.json()["state"]["active_model"]["filename"] == "aletheia.vrm"
 
     res = client.post(
         "/api/plugins/hermes-psfn-avatar/perform",
