@@ -86,6 +86,7 @@ def test_register_and_hooks() -> None:
         "pre_tool_call",
         "post_tool_call",
         "post_llm_call",
+        "transform_llm_output",
         "on_session_end",
     }
     assert ctx.skills == ["vrm-avatar"]
@@ -121,6 +122,22 @@ def test_register_and_hooks() -> None:
     assert st["clip"] == "Celebrate_Reaction_01.json"
     assert st["speech_text"] == "Shipped!"
     assert st["activity"] == "idle"
+
+    # transform_llm_output performs the directive and removes it, so read-aloud never speaks it
+    spoken = ctx.hooks["transform_llm_output"](
+        response_text='::avatar{mood="approval" reaction="nod"}\n\nSure, I can search the web.', turn_id="t-7"
+    )
+    assert spoken == "Sure, I can search the web."
+    st = json.loads(plugin_pkg.handle_vrm_avatar_tool({"action": "status"}))["state"]
+    assert st["mood"] == "approval"
+    assert st["reaction"] == "nod"
+    assert st["speech_text"] == ""  # the bubble is only for an explicit say= line, never the whole reply
+    # The same turn's post_llm_call sees the stripped text and must not replace the mood with a guess
+    ctx.hooks["post_llm_call"](response_text="Sure, I can search the web. Haha!", turn_id="t-7")
+    st = json.loads(plugin_pkg.handle_vrm_avatar_tool({"action": "status"}))["state"]
+    assert st["mood"] == "approval"
+    # Replies without a directive are left untouched
+    assert ctx.hooks["transform_llm_output"](response_text="Plain reply.", turn_id="t-8") is None
 
     ctx.hooks["on_session_end"]()
     st = json.loads(plugin_pkg.handle_vrm_avatar_tool({"action": "status"}))["state"]

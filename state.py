@@ -229,6 +229,7 @@ def default_state() -> dict[str, Any]:
         "clip": "Neutral_Idle_01.json",
         "speech_text": "",
         "speech_Id": 0,
+        "speech_spoken": "",
         "tool_activity": None,
         "camera": "bust",
         "corner": "bottom-right",
@@ -316,6 +317,7 @@ def apply_performance(
     reaction: str | None = None,
     activity: str | None = None,
     speech_text: str | None = None,
+    spoken_text: str | None = None,
     camera: str | None = None,
     corner: str | None = None,
     scale: float | None = None,
@@ -366,6 +368,9 @@ def apply_performance(
     if speech_text is not None:
         patch["speech_text"] = str(speech_text).strip()[:600]
         patch["speech_Id"] = int(current.get("speech_Id") or 0) + 1
+        # Text to mouth: the spoken reply when given, otherwise the bubble line itself.
+        spoken = speech_text if spoken_text is None else spoken_text
+        patch["speech_spoken"] = str(spoken).strip()[:1500]
 
     if camera is not None and camera in CAMERA_PRESETS:
         patch["camera"] = camera
@@ -400,6 +405,12 @@ def parse_avatar_directives(text: str) -> list[dict[str, str]]:
         if attrs:
             results.append(attrs)
     return results
+
+
+def strip_avatar_directives(text: str) -> str:
+    """Remove ``::avatar{...}`` lines so read-aloud and chat history carry only what is meant to be said."""
+    stripped = _DIRECTIVE_RE.sub("", text or "")
+    return re.sub(r"\n{3,}", "\n\n", stripped).strip()
 
 
 _KEYWORD_MOODS: tuple[tuple[tuple[str, ...], str, str | None], ...] = (

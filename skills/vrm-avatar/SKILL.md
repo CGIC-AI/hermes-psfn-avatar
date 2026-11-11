@@ -3,7 +3,7 @@ name: vrm-avatar
 description: Drive the 3D VRM VTuber / companion avatar overlay in Hermes Desktop and Web Dashboard using the vrm_avatar tool or inline ::avatar{} transcript directives.
 ---
 
-# 3D VRM Avatar (`hermes-psfn-avatar`)
+# Hermes PSFN Avatar (`hermes-psfn-avatar`)
 
 When `hermes-psfn-avatar` is enabled, a 3D VRM / Holo-Rig character floats in the corner of Hermes Desktop and the Web Dashboard (or docks as a side stage pane).
 

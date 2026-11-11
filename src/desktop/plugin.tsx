@@ -6,7 +6,7 @@
  *    mounted via permanent statusBar.right contribution, draggable, scalable, with
  *    head/cheek/body touch reactions and live speech bubble).
  * 2. Optional Dockable Stage Pane (`panes` area, toggled live).
- * 3. Full VRM Avatar Studio route (`/vrm-avatar`), sidebar nav, ⌘K palette commands,
+ * 3. Full Avatar Studio route (`/vrm-avatar`), sidebar nav, ⌘K palette commands,
  *    and Settings → Plugins page (`ctx.registerSettingsPage`).
  * 4. Transcript directive `::avatar{mood="joy" reaction="wave" say="..."}`.
  * 5. Automatic reactivity to Hermes `host.state.busy` / `awaitingResponse` / gateway
@@ -45,7 +45,12 @@ import {
 } from '../engine/interactions.ts';
 import { isRecord, validateLocalAvatarFile } from '../engine/load-avatar.ts';
 import {
+  MODEL_TUNING_RANGE,
   createStageRenderer,
+  readModelTuning,
+  requestResetView,
+  writeModelTuning,
+  type ModelTuning,
   type CameraPreset,
   type StagePlaybackState,
   type StageRendererHandle,
@@ -84,6 +89,7 @@ interface BackendAvatarState {
   readonly clip: string | null;
   readonly speech_text: string;
   readonly speech_Id: number;
+  readonly speech_spoken: string;
   readonly camera: CameraPreset;
   readonly corner: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
   readonly scale: number;
@@ -107,6 +113,7 @@ const DEFAULT_BACKEND_STATE: BackendAvatarState = {
   clip: 'Neutral_Idle_01.json',
   speech_text: '',
   speech_Id: 0,
+  speech_spoken: '',
   camera: 'bust',
   corner: 'bottom-right',
   scale: 1.0,
@@ -155,7 +162,7 @@ interface SharedController {
 }
 
 const CLIPS_CDN_BASE =
-  'https://raw.githubusercontent.com/axAilotl/hermes-psfn-avatar/7b9a7f7f677b2fd25ed889b56e5ec83055202463/clips';
+  'https://raw.githubusercontent.com/CGIC-AI/hermes-psfn-avatar/7b9a7f7f677b2fd25ed889b56e5ec83055202463/clips';
 
 export const REMOTE_MODEL_CATALOG: ReadonlyArray<ModelRecord> = [
   {
@@ -432,6 +439,7 @@ function createSharedController(ctx: {
       'clip',
       'speech_text',
       'speech_Id',
+      'speech_spoken',
       'psfn_lite',
     ]) {
       if (k in payload) safePatch[k] = payload[k];
@@ -461,6 +469,7 @@ function createSharedController(ctx: {
         emotional_base: nextBase,
         speech_text: nextSpeechText,
         speech_Id: nextSpeechId,
+        speech_spoken: typeof patch.say === 'string' ? patch.say : state.speech_spoken,
         seq: state.seq + 1,
       },
       true,
@@ -644,9 +653,14 @@ function createSharedController(ctx: {
       return localBuffer.buffer;
     }
     const remoteEntry = REMOTE_MODEL_CATALOG.find((m) => m.filename === filename);
+    // Local uploads have no pinned hash: key on size so a re-exported file with the same
+    // name replaces the cached copy instead of being shadowed by it forever.
+    const localSize = models.find((m) => m.filename === filename)?.size_bytes;
     const cacheKey = remoteEntry?.sha256
       ? `${filename}:${remoteEntry.sha256.slice(0, 16)}`
-      : filename;
+      : localSize
+        ? `${filename}:${localSize}`
+        : filename;
     const existingPromise = memoryModelCache.get(cacheKey);
     if (existingPromise) return await existingPromise;
 
@@ -758,7 +772,7 @@ function AvatarStageView({
     lastX: number;
     lastY: number;
     wantOrbit: boolean;
-    mode: 'undecided' | 'orbit' | 'move-window';
+    mode: 'undecided' | 'orbit' | 'pan' | 'move-window';
   } | null>(null);
   const lastTapAtRef = useRef<Record<TouchRegion, number>>({
     head: -Infinity,
@@ -876,6 +890,7 @@ function AvatarStageView({
       cameraPreset: state.camera,
       speechText: state.speech_text,
       speechId: state.speech_Id,
+      speechSpoken: state.speech_spoken ?? '',
       muted: state.muted,
     });
   }, [
@@ -888,6 +903,7 @@ function AvatarStageView({
     state.camera,
     state.speech_text,
     state.speech_Id,
+    state.speech_spoken,
     state.muted,
   ]);
 
@@ -896,8 +912,9 @@ function AvatarStageView({
   const onRegionPointerDown = useCallback(
     (region: TouchRegion, e: React.PointerEvent) => {
       e.preventDefault();
-      const wantOrbit =
-        e.shiftKey || e.button === 2 || e.button === 1 || !onOverlayDragDelta;
+      // Ctrl/Alt+drag or middle-drag slides the view (pan); Shift/right-drag orbits.
+      const wantPan = e.ctrlKey || e.altKey || e.button === 1;
+      const wantOrbit = wantPan || e.shiftKey || e.button === 2 || !onOverlayDragDelta;
       pointerStartRef.current = {
         id: e.pointerId,
         region,
@@ -907,7 +924,7 @@ function AvatarStageView({
         lastX: e.clientX,
         lastY: e.clientY,
         wantOrbit,
-        mode: wantOrbit ? 'orbit' : 'undecided',
+        mode: wantPan ? 'pan' : wantOrbit ? 'orbit' : 'undecided',
       };
       e.currentTarget.setPointerCapture?.(e.pointerId);
     },
@@ -927,9 +944,12 @@ function AvatarStageView({
       const totalDy = e.clientY - start.y;
       const totalDist = Math.hypot(totalDx, totalDy);
 
-      if (
+      if (start.mode === 'undecided' && (e.ctrlKey || e.altKey || (e.buttons & 4) !== 0)) {
+        start.wantOrbit = true;
+        start.mode = 'pan';
+      } else if (
         start.mode === 'undecided' &&
-        (e.shiftKey || (e.buttons & 2) !== 0 || (e.buttons & 4) !== 0 || !onOverlayDragDelta)
+        (e.shiftKey || (e.buttons & 2) !== 0 || !onOverlayDragDelta)
       ) {
         start.wantOrbit = true;
         start.mode = 'orbit';
@@ -939,6 +959,15 @@ function AvatarStageView({
         } else if (canDragOverlay) {
           start.mode = 'move-window';
         }
+      }
+
+      if (start.mode === 'pan') {
+        if (stepDx !== 0 || stepDy !== 0) {
+          const viewH = Math.max(1, e.currentTarget.ownerDocument.defaultView?.innerHeight ?? 1);
+          const canvasH = canvasRef.current?.clientHeight || viewH;
+          stageRef.current?.nudgePan(-stepDx / canvasH, stepDy / canvasH);
+        }
+        return;
       }
 
       if (start.mode === 'orbit') {
@@ -974,7 +1003,7 @@ function AvatarStageView({
       const deltaY = e.clientY - start.y;
       const dist = Math.hypot(deltaX, deltaY);
 
-      if (start.mode === 'orbit' || start.wantOrbit || e.shiftKey || e.button !== 0) {
+      if (start.mode === 'orbit' || start.mode === 'pan' || start.wantOrbit || e.shiftKey || e.button !== 0) {
         return;
       }
 
@@ -1012,6 +1041,11 @@ function AvatarStageView({
       onMouseLeave={handleHoverLeave}
       onWheel={(e) => {
         e.preventDefault();
+        if (e.shiftKey) {
+          // Shift+wheel slides the view up/down so a zoomed-in camera can reach any spot.
+          stageRef.current?.nudgePan(0, e.deltaY > 0 ? -0.06 : 0.06);
+          return;
+        }
         stageRef.current?.nudgeZoom(e.deltaY > 0 ? 1.08 : 0.92);
       }}
       style={{
@@ -1027,6 +1061,13 @@ function AvatarStageView({
         style={{
           display: 'block',
           height: '100%',
+          // Floating overlay: fade the bottom of the render out so the framing cut is not a hard edge.
+          ...(compactHud
+            ? {
+                maskImage: 'linear-gradient(to bottom, #000 0%, #000 84%, transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, #000 0%, #000 84%, transparent 100%)',
+              }
+            : {}),
           pointerEvents: compactHud ? 'none' : 'auto',
           width: '100%',
         }}
@@ -1090,8 +1131,8 @@ function AvatarStageView({
             }}
             title={
               positionLocked
-                ? 'Tap for headpat (Position locked · Shift+drag or Right-drag to orbit 3D view)'
-                : 'Tap for headpat · Drag to move · Shift+drag or Right-drag to orbit 3D view'
+                ? 'Tap for headpat (Position locked · Shift+drag or Right-drag to orbit · Ctrl+drag, Middle-drag or Shift+wheel to pan)'
+                : 'Tap for headpat · Drag to move · Shift+drag or Right-drag to orbit · Ctrl+drag, Middle-drag or Shift+wheel to pan'
             }
             type="button"
           />
@@ -1118,8 +1159,8 @@ function AvatarStageView({
             }}
             title={
               positionLocked
-                ? 'Tap cheek to boop (Position locked · Shift+drag or Right-drag to orbit 3D view)'
-                : 'Tap cheek to boop · Drag to move · Shift+drag or Right-drag to orbit 3D view'
+                ? 'Tap cheek to boop (Position locked · Shift+drag or Right-drag to orbit · Ctrl+drag, Middle-drag or Shift+wheel to pan)'
+                : 'Tap cheek to boop · Drag to move · Shift+drag or Right-drag to orbit · Ctrl+drag, Middle-drag or Shift+wheel to pan'
             }
             type="button"
           />
@@ -1146,16 +1187,17 @@ function AvatarStageView({
             }}
             title={
               positionLocked
-                ? 'Tap for hug (Position locked · Shift+drag or Right-drag to orbit 3D view)'
-                : 'Drag to move · Tap for hug · Shift+drag or Right-drag to orbit 3D view'
+                ? 'Tap for hug (Position locked · Shift+drag or Right-drag to orbit · Ctrl+drag, Middle-drag or Shift+wheel to pan)'
+                : 'Drag to move · Tap for hug · Shift+drag or Right-drag to orbit · Ctrl+drag, Middle-drag or Shift+wheel to pan'
             }
             type="button"
           />
         </div>
       )}
 
-      {/* Emotion / Activity / Speech Bubble (shows mood tag + reaction text, then auto-fades out after 3.2s) */}
-      {(state.mood !== 'neutral' || state.speech_text || effectiveActivity !== 'idle') && (
+      {/* Emotion / Speech Bubble (shows mood tag + reaction text, then auto-fades out after 3.2s).
+          Activity alone (thinking, tool use) never raises it: the body animation already shows that. */}
+      {(state.mood !== 'neutral' || state.speech_text) && (
         <div
           style={{
             background: 'var(--ui-surface-elevated, rgba(15, 23, 42, 0.86))',
@@ -1324,7 +1366,7 @@ function AvatarStageView({
               fontWeight: 600,
               padding: '2px 6px',
             }}
-            title="Open VRM Avatar Studio"
+            title="Open Avatar Studio"
             type="button"
           >
             Studio
@@ -1402,10 +1444,10 @@ function StatusbarAndFloatingOverlay({
             e.preventDefault();
             host.navigate('/vrm-avatar');
           }}
-          title="Click: cycle Floating / Docked / Hidden · Right-click: open VRM Avatar Studio"
+          title="Click: cycle Floating / Docked / Hidden · Right-click: open Avatar Studio"
           type="button"
         >
-          VRM Avatar
+          Hermes PSFN Avatar
         </button>
       )}
 
@@ -1507,9 +1549,18 @@ function DockedAvatarPane({ controller }: { controller: SharedController }) {
   );
 }
 
-/** Full VRM Avatar Studio & Settings Page (`/vrm-avatar` route and Settings → Plugins). */
+/** Full Avatar Studio & Settings Page (`/vrm-avatar` route and Settings → Plugins). */
 function AvatarStudioPage({ controller }: { controller: SharedController }) {
   const state = useControllerState(controller);
+  // Per-model tuning (arm spread, height offset, size) is keyed by the label the stage loads the model under.
+  const tuningModel = state.active_model?.name || 'Nous-Girl (VRM 0.x)';
+  const [tuning, setTuning] = useState<ModelTuning>(() => readModelTuning(tuningModel));
+  useEffect(() => {
+    setTuning(readModelTuning(tuningModel));
+  }, [tuningModel]);
+  const tuneModel = (patch: Partial<ModelTuning>): void => {
+    setTuning(writeModelTuning(tuningModel, patch));
+  };
   const models = controller.getModels();
   const clips = controller.getClips();
   const [uploadStatus, setUploadStatus] = useState<string>('');
@@ -1531,10 +1582,7 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-5 text-sm text-(--ui-text-primary)">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--ui-stroke-secondary) pb-3">
         <div>
-          <h1 className="text-base font-semibold">3D VRM Avatar Studio (PSFN Embodiment)</h1>
-          <p className="text-xs text-(--ui-text-tertiary)">
-            Three.js + @pixiv/three-vrm floating VTuber overlay, 42 ARDY motion-capture clips, 27 GoEmotions moods, and PSFN Lite continuity bridge.
-          </p>
+          <h1 className="text-base font-semibold">Hermes PSFN Avatar</h1>
         </div>
         <div className="flex items-center gap-2">
           {(['floating', 'pane', 'hidden'] as const).map((m) => (
@@ -1578,7 +1626,17 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
           {/* Framing & Corner Controls */}
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <div className="mb-1 text-(--ui-text-tertiary)">Camera Framing</div>
+              <div className="mb-1 flex items-center justify-between text-(--ui-text-tertiary)">
+                <span>Camera Framing</span>
+                <button
+                  className="rounded border border-(--ui-stroke-secondary) px-1.5"
+                  onClick={() => requestResetView()}
+                  title="Reset orbit, zoom and pan in every avatar view"
+                  type="button"
+                >
+                  Reset View
+                </button>
+              </div>
               <div className="flex gap-1">
                 {(['bust', 'waist', 'full'] as const).map((cam) => (
                   <button
@@ -1622,6 +1680,43 @@ function AvatarStudioPage({ controller }: { controller: SharedController }) {
                 </option>
               </select>
             </div>
+          </div>
+
+          {/* Per-model tuning */}
+          <div className="rounded-lg border border-(--ui-stroke-secondary) p-2 text-xs">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="truncate text-(--ui-text-tertiary)">Model Tuning · {tuningModel}</span>
+              <button
+                className="rounded border border-(--ui-stroke-secondary) px-2 py-0.5"
+                onClick={() => tuneModel({ armSpread: 1, offsetY: 0, size: 1 })}
+                title="Restore this model's arm spread, height and size to their defaults"
+                type="button"
+              >
+                Defaults
+              </button>
+            </div>
+            {(
+              [
+                ['armSpread', 'Arm Spread', '×', 'How far the arms are held out from the body during clips. Lower it for slim outfits, raise it for wide skirts or sleeves.'],
+                ['offsetY', 'Height', '', 'Move the model up or down in frame.'],
+                ['size', 'Size', '×', 'Make the model appear larger or smaller in frame.'],
+              ] as const
+            ).map(([key, label, unit, hint]) => (
+              <div className="flex items-center gap-3 py-0.5" key={key} title={hint}>
+                <span className="w-28 shrink-0 text-(--ui-text-tertiary)">
+                  {label} ({tuning[key].toFixed(2)}{unit})
+                </span>
+                <input
+                  className="flex-1"
+                  max={MODEL_TUNING_RANGE[key][1]}
+                  min={MODEL_TUNING_RANGE[key][0]}
+                  onChange={(e) => tuneModel({ [key]: Number(e.target.value) })}
+                  step="0.05"
+                  type="range"
+                  value={tuning[key]}
+                />
+              </div>
+            ))}
           </div>
 
           <div className="flex items-center gap-3 text-xs">
@@ -1846,7 +1941,7 @@ function AvatarTranscriptDirective({
 
 const plugin = {
   id: PLUGIN_ID,
-  name: 'PSFN 3D VRM Avatar',
+  name: 'Hermes PSFN Avatar',
   register(ctx: {
     register: (c: Record<string, unknown>) => () => void;
     registerMany: (cs: Array<Record<string, unknown>>) => () => void;
@@ -1867,7 +1962,7 @@ const plugin = {
         disposePane = ctx.register({
           id: 'stage-pane',
           area: PANES_AREA,
-          title: 'VRM Avatar',
+          title: 'Hermes PSFN Avatar',
           data: { placement: 'right', width: '300px' },
           render: () => <DockedAvatarPane controller={controller} />,
         });
@@ -1898,7 +1993,7 @@ const plugin = {
     // Register Settings → Plugins entry
     ctx.registerSettingsPage?.({
       id: 'settings',
-      title: 'VRM Avatar',
+      title: 'Hermes PSFN Avatar',
       icon: 'smiley',
       order: 20,
       render: () => <AvatarStudioPage controller={controller} />,
@@ -1940,7 +2035,7 @@ const plugin = {
       {
         id: 'studio-nav',
         area: SIDEBAR_NAV_AREA,
-        data: { path: '/vrm-avatar', label: 'VRM Avatar', codicon: 'smiley' },
+        data: { path: '/vrm-avatar', label: 'Avatar Studio', codicon: 'smiley' },
       },
       {
         id: 'directive-avatar',
@@ -1957,7 +2052,7 @@ const plugin = {
         area: PALETTE_AREA,
         data: {
           id: `${PLUGIN_ID}.studio`,
-          label: 'VRM Avatar: Open 3D Avatar Studio',
+          label: 'Hermes PSFN Avatar: Open Avatar Studio',
           keywords: ['vrm', 'avatar', 'vtuber', '3d', 'psfn', 'persephone'],
           run: () => host.navigate('/vrm-avatar'),
         },
@@ -1967,7 +2062,7 @@ const plugin = {
         area: PALETTE_AREA,
         data: {
           id: `${PLUGIN_ID}.toggle`,
-          label: 'VRM Avatar: Toggle Floating Corner / Docked Pane / Hidden',
+          label: 'Hermes PSFN Avatar: Toggle Floating Corner / Docked Pane / Hidden',
           keywords: ['vrm', 'avatar', 'overlay', 'float', 'dock'],
           run: () => {
             const cur = controller.getState().mode;

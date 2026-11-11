@@ -32,10 +32,88 @@ import {
 import { VRM_PRESET_FOR_BASE, type EmotionalBase } from './emotion-mapping.ts';
 import { createHoloAvatar, type HoloAvatarHandle } from './holo-avatar.ts';
 import { disposeAvatarScenes, loadAvatarFromArrayBuffer, LocalAvatarError } from './load-avatar.ts';
-import { sampleTtsAudio } from './tts-audio-tap.ts';
+import { createSpeechCadence } from './speech-cadence.ts';
 import { VrmClipPlayer, type BakedMotionClip, type ClipFetcher } from './vrm-clip-player.ts';
 
 export type CameraPreset = 'bust' | 'waist' | 'full';
+
+/**
+ * Per-model tuning, keyed by model label and kept in localStorage:
+ * - armSpread: scales the clip player's arm clearance offsets (0 = raw clip arms, 1 = default)
+ * - offsetY: shifts the model up (+) or down (-) in frame, as a fraction of its height
+ * - size: makes the model appear larger (>1) or smaller (<1) in frame
+ * Offset and size are applied to the camera framing, so physics and clips are untouched.
+ */
+export interface ModelTuning {
+  readonly armSpread: number;
+  readonly offsetY: number;
+  readonly size: number;
+}
+export const MODEL_TUNING_DEFAULT: ModelTuning = { armSpread: 1, offsetY: 0, size: 1 };
+export const MODEL_TUNING_RANGE: Readonly<Record<keyof ModelTuning, readonly [number, number]>> = {
+  armSpread: [0, 1.5],
+  offsetY: [-0.5, 0.5],
+  size: [0.5, 2],
+};
+const MODEL_TUNING_STORAGE_KEY = 'hermes-psfn-avatar:modelTuning';
+const LEGACY_ARM_CLEARANCE_STORAGE_KEY = 'hermes-psfn-avatar:armClearance';
+const MODEL_TUNING_EVENT = 'hermes-psfn-avatar:model-tuning';
+const RESET_VIEW_EVENT = 'hermes-psfn-avatar:reset-view';
+
+function sanitizeTuning(raw: unknown): ModelTuning {
+  const src = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const pick = (key: keyof ModelTuning): number => {
+    const value = src[key];
+    const [min, max] = MODEL_TUNING_RANGE[key];
+    return typeof value === 'number' && Number.isFinite(value)
+      ? MathUtils.clamp(value, min, max)
+      : MODEL_TUNING_DEFAULT[key];
+  };
+  return { armSpread: pick('armSpread'), offsetY: pick('offsetY'), size: pick('size') };
+}
+
+function readTuningMap(): Record<string, unknown> {
+  try {
+    const raw = window.localStorage.getItem(MODEL_TUNING_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>;
+  } catch {
+    // Storage unavailable or malformed: fall back to defaults
+  }
+  return {};
+}
+
+export function readModelTuning(label: string): ModelTuning {
+  const stored = readTuningMap()[label];
+  if (stored) return sanitizeTuning(stored);
+  try {
+    // Arm spread was stored on its own before offset/size existed.
+    const legacy = window.localStorage.getItem(LEGACY_ARM_CLEARANCE_STORAGE_KEY);
+    const value = legacy ? (JSON.parse(legacy) as Record<string, unknown>)[label] : undefined;
+    if (typeof value === 'number') return sanitizeTuning({ armSpread: value });
+  } catch {
+    // Ignore
+  }
+  return MODEL_TUNING_DEFAULT;
+}
+
+export function writeModelTuning(label: string, patch: Partial<ModelTuning>): ModelTuning {
+  const next = sanitizeTuning({ ...readModelTuning(label), ...patch });
+  try {
+    const map = readTuningMap();
+    map[label] = next;
+    window.localStorage.setItem(MODEL_TUNING_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // Ignore quota errors; live renderers still get the event below
+  }
+  window.dispatchEvent(new CustomEvent(MODEL_TUNING_EVENT, { detail: { label, tuning: next } }));
+  return next;
+}
+
+/** Ask every live avatar view to drop its orbit, zoom and pan back to the default framing. */
+export function requestResetView(): void {
+  window.dispatchEvent(new CustomEvent(RESET_VIEW_EVENT));
+}
 
 export interface StagePlaybackState {
   readonly active: boolean;
@@ -48,6 +126,8 @@ export interface StagePlaybackState {
   readonly cameraPreset: CameraPreset;
   readonly speechText: string;
   readonly speechId: number;
+  /** The reply text being spoken; mouth shapes are laid out from its words and punctuation. */
+  readonly speechSpoken: string;
   readonly muted: boolean;
 }
 
@@ -65,6 +145,8 @@ export interface StageRendererHandle {
   playClipByFile(clipFile: string, loop?: boolean): Promise<void>;
   nudgeOrbit(deltaYaw: number, deltaPitch: number): void;
   nudgeZoom(factor: number): void;
+  /** Slide the view in the camera plane; deltas are fractions of the viewport height. */
+  nudgePan(deltaRight: number, deltaUp: number): void;
   resetCamera(): void;
   dispose(): void;
 }
@@ -109,7 +191,8 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
   };
   let speechPhaseSec = 0;
   let smoothedSpeechLevel = 0;
-  let speechBrightness = 0.35;
+  const VOWELS = ['aa', 'ih', 'ou', 'ee', 'oh'] as const;
+  const visemeWeights: Record<(typeof VOWELS)[number], number> = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 };
 
   // 3D Gaze Target & Cursor Tracking State
   const lookAtTarget = new Object3D();
@@ -168,17 +251,32 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
   let orbitYaw = 0;
   let orbitPitch = 0.03;
   let orbitZoom = 1.0;
+  let panRight = 0;
+  let panUp = 0;
+  let lastViewHeight = 1;
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       const rawOrbit = window.localStorage.getItem(ORBIT_STORAGE_KEY);
       if (rawOrbit) {
-        const parsed = JSON.parse(rawOrbit) as { yaw?: number; pitch?: number; zoom?: number };
+        const parsed = JSON.parse(rawOrbit) as {
+          yaw?: number;
+          pitch?: number;
+          zoom?: number;
+          panRight?: number;
+          panUp?: number;
+        };
         if (typeof parsed.yaw === 'number' && Number.isFinite(parsed.yaw)) orbitYaw = parsed.yaw;
         if (typeof parsed.pitch === 'number' && Number.isFinite(parsed.pitch)) {
           orbitPitch = MathUtils.clamp(parsed.pitch, -0.75, 0.85);
         }
         if (typeof parsed.zoom === 'number' && Number.isFinite(parsed.zoom)) {
           orbitZoom = MathUtils.clamp(parsed.zoom, 0.45, 3.2);
+        }
+        if (typeof parsed.panRight === 'number' && Number.isFinite(parsed.panRight)) {
+          panRight = MathUtils.clamp(parsed.panRight, -3, 3);
+        }
+        if (typeof parsed.panUp === 'number' && Number.isFinite(parsed.panUp)) {
+          panUp = MathUtils.clamp(parsed.panUp, -3, 3);
         }
       }
     }
@@ -191,7 +289,7 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem(
           ORBIT_STORAGE_KEY,
-          JSON.stringify({ yaw: orbitYaw, pitch: orbitPitch, zoom: orbitZoom }),
+          JSON.stringify({ yaw: orbitYaw, pitch: orbitPitch, zoom: orbitZoom, panRight, panUp }),
         );
       }
     } catch {
@@ -210,6 +308,7 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     cameraPreset: 'bust',
     speechText: '',
     speechId: 0,
+    speechSpoken: '',
     muted: false,
   };
 
@@ -370,12 +469,24 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     const visibleHeight = modelHeight * spanRatio;
     const halfFovRad = MathUtils.degToRad(camera.fov / 2);
     const baseDist = (visibleHeight / (2 * Math.tan(halfFovRad))) * 1.05;
-    const dist = Math.max(0.35, baseDist * orbitZoom);
+    // Per-model size/offset only apply to loaded VRM/GLB models, never the built-in Holo-Rig.
+    const fit = holoAvatar ? MODEL_TUNING_DEFAULT : tuning;
+    targetY -= fit.offsetY * modelHeight;
+    const dist = Math.max(0.35, (baseDist * orbitZoom) / fit.size);
 
     const cosP = Math.cos(orbitPitch);
     const sinP = Math.sin(orbitPitch);
     const sinY = Math.sin(orbitYaw);
     const cosY = Math.cos(orbitYaw);
+
+    // User pan slides camera and target together along the camera's right/up axes.
+    lastViewHeight = 2 * dist * Math.tan(halfFovRad);
+    const limit = Math.max(0.5, modelHeight * 1.2);
+    panRight = MathUtils.clamp(panRight, -limit, limit);
+    panUp = MathUtils.clamp(panUp, -limit, limit);
+    targetX += cosY * panRight - sinP * sinY * panUp;
+    targetY += cosP * panUp;
+    targetZ += -sinY * panRight - sinP * cosY * panUp;
 
     camera.position.set(
       targetX + dist * cosP * sinY,
@@ -390,6 +501,8 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     companionPlayer?.dispose();
     companionPlayer = null;
     clipPlayer = null;
+    currentLabel = '';
+    tuning = MODEL_TUNING_DEFAULT;
     companionMotion = null;
     if (gltfMixer) {
       gltfMixer.stopAllAction();
@@ -425,6 +538,7 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     const hips = getBoneNode('hips');
     const hipsRest = hips ? hips.position.clone() : null;
     const body = new VrmClipPlayer(getBoneNode, hipsRest, fetchClip);
+    body.armClearance = holoAvatar ? 1 : tuning.armSpread;
     const player = new CompanionPlayer(body, getExpressionAdapter(), audioClock, {
       onState: (st, detail) => {
         onStatus?.({ format: currentFormat, state: detail ? `${st} · ${detail}` : st });
@@ -470,6 +584,27 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     await wireClipRuntime(generation);
   }
 
+  let currentLabel = '';
+  let tuning: ModelTuning = MODEL_TUNING_DEFAULT;
+  function applyTuning(next: ModelTuning): void {
+    tuning = next;
+    if (clipPlayer) clipPlayer.armClearance = next.armSpread;
+    applyCameraFraming();
+    if (!disposed && !state.animated) drawFrame(0);
+  }
+  const onModelTuning = (ev: Event): void => {
+    const detail = (ev as CustomEvent<{ label?: string; tuning?: ModelTuning }>).detail;
+    if (!detail || detail.label !== currentLabel || !detail.tuning) return;
+    applyTuning(sanitizeTuning(detail.tuning));
+  };
+  const onResetView = (): void => {
+    if (!disposed) handle.resetCamera();
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener(MODEL_TUNING_EVENT, onModelTuning);
+    window.addEventListener(RESET_VIEW_EVENT, onResetView);
+  }
+
   async function loadVrmBuffer(buffer: ArrayBuffer, label = 'VRM Model'): Promise<void> {
     const generation = ++loadGeneration;
     const { gltf, vrm } = await loadAvatarFromArrayBuffer(buffer);
@@ -489,6 +624,8 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     }
 
     clearCurrentModel();
+    currentLabel = label;
+    tuning = readModelTuning(label);
     currentVrm = vrm;
     companionMotion = motion;
     currentSceneRoots = [...gltf.scenes];
@@ -572,9 +709,11 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     }
   }
 
+  const speechCadence = createSpeechCadence();
+
   function updateSpeechClock(dt: number): void {
-    // Drive talking animation & mouth visemes exclusively from live TTS audio playback
-    const tts = sampleTtsAudio(dt);
+    // Drive talking animation & mouth visemes from the text of the current reply
+    const tts = speechCadence.sample(dt);
     if (tts.speaking && !state.muted) {
       if (companionPlayer?.mode === 'preview' && !state.reaction) {
         companionPlayer.setMode('auto');
@@ -583,12 +722,14 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
       audioClock.speechTime = speechPhaseSec;
       const alpha = Math.min(1, Math.max(0.2, dt * 28));
       smoothedSpeechLevel += (tts.level - smoothedSpeechLevel) * alpha;
-      speechBrightness += (tts.brightness - speechBrightness) * alpha;
+      const shape = Math.min(1, dt * 26);
+      for (const v of VOWELS) visemeWeights[v] += (tts.visemes[v] - visemeWeights[v]) * shape;
       audioClock.speechLevel = Math.max(0.06, Math.min(1.0, smoothedSpeechLevel));
       return;
     }
 
     smoothedSpeechLevel = Math.max(0, smoothedSpeechLevel - dt * 10);
+    for (const v of VOWELS) visemeWeights[v] = Math.max(0, visemeWeights[v] - dt * 10);
     audioClock.speechTime = smoothedSpeechLevel > 0.02 ? speechPhaseSec : null;
     audioClock.speechLevel = smoothedSpeechLevel > 0.02 ? smoothedSpeechLevel : 0;
   }
@@ -744,25 +885,8 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
         ? Math.max(0, 1 - Math.abs(((elapsedSec % 4.4) - 4.1) / 0.11))
         : 0;
       expr.setValue('blink', state.emotionalBase === 'asleep' ? 1 : blink);
-      // Secondary VRM 1.0 & 0.x vowel visemes driven by live TTS amplitude & brightness
-      const lvl = audioClock.speechLevel;
-      expr.setValue('aa', speaking ? Math.min(1, lvl * 0.95) : 0);
-      expr.setValue(
-        'ih',
-        speaking ? Math.max(0, lvl * speechBrightness * (0.45 + 0.35 * Math.sin(speechPhaseSec * 14.0))) : 0,
-      );
-      expr.setValue(
-        'ou',
-        speaking ? Math.max(0, lvl * (1 - speechBrightness * 0.5) * (0.4 + 0.3 * Math.cos(speechPhaseSec * 11.0))) : 0,
-      );
-      expr.setValue(
-        'ee',
-        speaking ? Math.max(0, lvl * speechBrightness * (0.3 + 0.25 * Math.cos(speechPhaseSec * 17.0))) : 0,
-      );
-      expr.setValue(
-        'oh',
-        speaking ? Math.max(0, lvl * (0.35 + 0.25 * Math.sin(speechPhaseSec * 9.5))) : 0,
-      );
+      // VRM 1.0 & 0.x vowel visemes, laid out from the words of the reply being spoken
+      for (const v of VOWELS) expr.setValue(v, speaking ? Math.min(1, visemeWeights[v]) : 0);
     }
 
     if (!clipPlayer?.playing) {
@@ -848,11 +972,12 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
   resizeObserver?.observe(canvas);
   resize();
 
-  return {
+  const handle: StageRendererHandle = {
     updateState(next: StagePlaybackState): void {
       if (disposed) return;
       const presetChanged = state.cameraPreset !== next.cameraPreset;
       const loopChanged = state.active !== next.active || state.animated !== next.animated;
+      if (next.speechId !== state.speechId) speechCadence.noteReply(next.speechSpoken);
       state = next;
       if (presetChanged) applyCameraFraming();
       applyMoodAndClipTriggers(false);
@@ -879,7 +1004,19 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
         renderer.render(scene, camera);
       }
     },
+    nudgePan(deltaRight: number, deltaUp: number): void {
+      if (!Number.isFinite(deltaRight) || !Number.isFinite(deltaUp)) return;
+      panRight += deltaRight * lastViewHeight;
+      panUp += deltaUp * lastViewHeight;
+      saveOrbitState();
+      applyCameraFraming();
+      if (!disposed && state.active && width > 0 && height > 0) {
+        renderer.render(scene, camera);
+      }
+    },
     resetCamera(): void {
+      panRight = 0;
+      panUp = 0;
       orbitYaw = 0;
       orbitPitch = 0.03;
       orbitZoom = 1.0;
@@ -892,6 +1029,8 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
       disposed = true;
       if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
         window.removeEventListener('pointermove', onWindowPointerMove);
+        window.removeEventListener(MODEL_TUNING_EVENT, onModelTuning);
+        window.removeEventListener(RESET_VIEW_EVENT, onResetView);
         window.removeEventListener('mousemove', onWindowPointerMove);
       }
       stopLoop();
@@ -901,4 +1040,5 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
       renderer.forceContextLoss();
     },
   };
+  return handle;
 }

@@ -5,6 +5,7 @@
  */
 
 import {
+  BufferAttribute,
   BufferGeometry,
   Line,
   LoadingManager,
@@ -255,6 +256,18 @@ export async function loadAvatarFromArrayBuffer(
     if (vrm) {
       VRMUtils.rotateVRM0(vrm);
       VRMUtils.removeUnnecessaryVertices(vrm.scene);
+      // combineSkeletons rewrites skinIndex in place; glTF stores it as 8-bit when a
+      // primitive touches <256 joints, which overflows once the merged skeleton is larger.
+      vrm.scene.traverse((object) => {
+        if (!(object instanceof SkinnedMesh)) return;
+        const skinIndex = object.geometry.getAttribute('skinIndex');
+        if (skinIndex instanceof BufferAttribute && skinIndex.array instanceof Uint8Array) {
+          object.geometry.setAttribute(
+            'skinIndex',
+            new BufferAttribute(new Uint16Array(skinIndex.array), skinIndex.itemSize),
+          );
+        }
+      });
       VRMUtils.combineSkeletons(vrm.scene);
       if (gltf.animations.length === 0) VRMUtils.combineMorphs(vrm);
       vrm.scene.traverse((object) => {

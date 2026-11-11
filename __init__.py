@@ -20,6 +20,7 @@ from .state import (
     list_models,
     load_clips_manifest,
     parse_avatar_directives,
+    strip_avatar_directives,
     read_state,
     write_state,
 )
@@ -203,7 +204,13 @@ def register(ctx: Any) -> None:
 
     def on_pre_llm_call(**kwargs: Any) -> None:
         del kwargs
-        write_state({"activity": "thinking", "reaction": None})
+        # A new step starts clean: the last reply's bubble text and mood tag must not hang over the thinking pose.
+        current = read_state()
+        # The speaking window of the last reply is left alone: follow-up model calls must not cut her off.
+        patch: dict[str, Any] = {"activity": "thinking", "reaction": None, "speech_text": ""}
+        if not (current.get("psfn_lite") or {}).get("connected"):
+            patch.update(mood="neutral", emotional_base="neutral")
+        write_state(patch)
 
     def on_pre_tool_call(**kwargs: Any) -> None:
         tool_name = str(kwargs.get("tool_name") or kwargs.get("name") or "")
@@ -236,9 +243,38 @@ def register(ctx: Any) -> None:
             }
         )
 
+    # The turn whose ::avatar{} directive was already performed (and removed) by the transform hook.
+    performed: dict[str, Any] = {"turn_id": None, "at": 0.0}
+
+    def on_transform_llm_output(**kwargs: Any) -> str | None:
+        """Perform ::avatar{} directives, then drop them from the reply so read-aloud never speaks them."""
+        if not bool(ctx.get_config("strip_directives", True)):
+            return None
+        reply = str(kwargs.get("response_text") or "")
+        directives = parse_avatar_directives(reply)
+        if not directives:
+            return None
+        last = directives[-1]
+        spoken = strip_avatar_directives(reply)
+        apply_performance(
+            mood=last.get("mood") or last.get("emotion"),
+            reaction=last.get("reaction") or last.get("action"),
+            camera=last.get("camera"),
+            activity="idle",
+            speech_text=last.get("say") or "",
+            spoken_text=spoken or last.get("say") or "",
+        )
+        performed.update(turn_id=kwargs.get("turn_id"), at=time.monotonic())
+        # A reply that was only a directive keeps its ``say`` line; an empty rewrite would be ignored.
+        return spoken or last.get("say") or None
+
     def on_post_llm_call(**kwargs: Any) -> None:
-        reply = str(kwargs.get("response_text") or kwargs.get("content") or kwargs.get("text") or "")
+        reply = str(kwargs.get("assistant_response") or kwargs.get("response_text") or kwargs.get("content") or kwargs.get("text") or "")
         has_tools = bool(kwargs.get("tool_calls") or kwargs.get("has_tool_calls"))
+        turn_id = kwargs.get("turn_id")
+        same_turn = turn_id is not None and turn_id == performed["turn_id"]
+        if same_turn or (turn_id is None and time.monotonic() - performed["at"] < 5.0):
+            return  # the directive already set this turn's mood; do not overwrite it with a guess
         psfn_synced = None
         if bool(ctx.get_config("psfn_lite_bridge", True)):
             psfn_synced = sync_from_psfn_lite()
@@ -251,7 +287,8 @@ def register(ctx: Any) -> None:
                 reaction=last.get("reaction") or last.get("action"),
                 camera=last.get("camera"),
                 activity="thinking" if has_tools else "idle",
-                speech_text=last.get("say") or reply[:320],
+                speech_text=last.get("say") or "",
+                spoken_text=strip_avatar_directives(reply) or last.get("say") or "",
             )
             return
 
@@ -265,7 +302,8 @@ def register(ctx: Any) -> None:
                 mood=None if psfn_synced else inferred.get("mood"),
                 reaction=inferred.get("reaction"),
                 activity="idle",
-                speech_text=reply[:320],
+                speech_text="",
+                spoken_text=reply,
             )
 
     def on_session_end(**kwargs: Any) -> None:
@@ -277,6 +315,7 @@ def register(ctx: Any) -> None:
     ctx.register_hook("pre_llm_call", on_pre_llm_call)
     ctx.register_hook("pre_tool_call", on_pre_tool_call)
     ctx.register_hook("post_tool_call", on_post_tool_call)
+    ctx.register_hook("transform_llm_output", on_transform_llm_output)
     ctx.register_hook("post_llm_call", on_post_llm_call)
     ctx.register_hook("on_session_end", on_session_end)
 

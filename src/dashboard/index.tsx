@@ -52,6 +52,7 @@ interface DashboardState {
   clip: string | null;
   speech_text: string;
   speech_Id: number;
+  speech_spoken?: string;
   camera: CameraPreset;
   corner: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
   scale: number;
@@ -188,6 +189,7 @@ function mountDashboardPlugin(): void {
         cameraPreset: state.camera,
         speechText: state.speech_text,
         speechId: state.speech_Id,
+        speechSpoken: state.speech_spoken ?? '',
         muted: state.muted,
       });
     }, [state]);
@@ -243,7 +245,7 @@ function mountDashboardPlugin(): void {
   function DashboardStudioPage() {
     const { state, perform, syncPsfn } = useBackendState();
     if (!state) {
-      return h('div', { className: 'p-6 text-sm' }, 'Loading 3D VRM Avatar Studio…');
+      return h('div', { className: 'p-6 text-sm' }, 'Loading Avatar Studio…');
     }
 
     return h(
@@ -252,7 +254,7 @@ function mountDashboardPlugin(): void {
       h(
         'div',
         { className: 'psfn-vrm-studio-header' },
-        h('h2', null, '3D VRM Avatar Studio · PSFN Embodiment'),
+        h('h2', null, 'Hermes PSFN Avatar'),
         h(
           'div',
           { className: 'psfn-vrm-btn-row' },

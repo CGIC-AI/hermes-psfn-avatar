@@ -83,10 +83,13 @@ export class VrmClipPlayer {
   t = 0;
   completedLoops = 0;
   loop = true;
+  /** Per-model multiplier for WORLD_ARM_CLEARANCE_OFFSETS (0 = raw clip arms, 1 = default spread). */
+  armClearance = 1;
 
   private _maps: BoneMapEntry[] = [];
   private _q = new Quaternion();
   private _q2 = new Quaternion();
+  private _q3 = new Quaternion();
   private _cache = new Map<string, Promise<BakedMotionClip>>();
   private _loadSequence = 0;
   private _coreRoot0 = new Vector3();
@@ -260,8 +263,10 @@ export class VrmClipPlayer {
       }
       const targetGlobal = q0.clone().multiply(m.coreRestInv).multiply(m.vrmRestGlobal);
       const clearance = WORLD_ARM_CLEARANCE_OFFSETS[m.vrmName];
-      if (clearance) {
-        targetGlobal.premultiply(clearance);
+      if (clearance && this.armClearance > 0) {
+        targetGlobal.premultiply(
+          this.armClearance === 1 ? clearance : this._q3.identity().slerp(clearance, this.armClearance),
+        );
       }
       const parentGlobal = m.node.parent
         ? m.node.parent.getWorldQuaternion(new Quaternion())
