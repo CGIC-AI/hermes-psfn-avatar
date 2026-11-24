@@ -146,3 +146,66 @@ test('desktop/plugin.js and dashboard/dist/index.js bundles exist and stay under
   assert.equal(desktopSizeKb < 1024, true, `desktop/plugin.js is ${desktopSizeKb}KB`);
   assert.equal(dashboardSizeKb < 1024, true, `dashboard/dist/index.js is ${dashboardSizeKb}KB`);
 });
+
+test('with ctx.voice the mouth follows the words being heard and their loudness', async (t) => {
+  const bundled = await build({
+    entryPoints: [path.join(ROOT, 'src', 'engine', 'speech-cadence.ts')],
+    bundle: true,
+    write: false,
+    format: 'esm',
+    platform: 'node',
+  });
+  const { createSpeechCadence } = await import(
+    `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`
+  );
+  let now = 0;
+  let level = 0.5;
+  let latency = 0;
+  let status = 'speaking';
+  let pieces = [];
+  t.mock.method(performance, 'now', () => now);
+  const cadence = createSpeechCadence({
+    playback: { get: () => ({ status }) },
+    timeline: { get: () => ({ segments: [{ pieces }] }) },
+    level: () => level,
+    outputLatencyMs: () => latency,
+  });
+  const at = (ms) => {
+    now = ms;
+    return cadence.sample(0.016);
+  };
+
+  // A timed word: its sounds in order inside its window, closed outside it, whatever the reply text says.
+  cadence.noteReply('Reply text must not drive the mouth.');
+  pieces = [{ text: 'hello', kind: 'word', startMs: 1000, endMs: 1400 }];
+  assert.equal(at(900).level, 0);
+  assert.ok(at(1080).visemes.ee > 0.3);
+  assert.ok(at(1330).visemes.oh > 0.3);
+  assert.equal(at(1450).level, 0);
+
+  // The word's window is open but the voice is silent.
+  level = 0.01;
+  assert.equal(at(1500).level, 0);
+  pieces = [{ text: 'aaaa', kind: 'fragment', startMs: 1500, endMs: 4000 }];
+  assert.equal(at(1600).level, 0);
+
+  // Loudness is applied when the listener hears it, not when the audio graph plays it.
+  latency = 200;
+  for (let ms = 1700; ms < 2000; ms += 10) at(ms);
+  level = 0.5;
+  for (let ms = 2000; ms < 2190; ms += 10) assert.equal(at(ms).level, 0);
+  assert.ok(at(2210).level > 0.1);
+  latency = 0;
+
+  // Sentence timing only: openness follows loudness.
+  pieces = [{ text: 'A sentence.', kind: 'sentence', startMs: 5000, endMs: 9000 }];
+  level = 0.03;
+  assert.equal(at(5000).level, 0);
+  level = 0.1;
+  const quiet = at(5100).level;
+  level = 0.3;
+  assert.ok(quiet > 0.1 && at(5200).level > quiet);
+
+  status = 'idle';
+  assert.equal(at(5300).speaking, false);
+});
