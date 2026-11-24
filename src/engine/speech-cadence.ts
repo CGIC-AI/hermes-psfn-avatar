@@ -1,14 +1,34 @@
 /**
- * Mouth shapes for spoken replies, derived from the reply text, without touching the host's audio.
+ * Mouth shapes for spoken replies, without touching the host's audio.
  *
- * The plugin never patches browser or app objects, so it cannot read the audio Hermes plays. Instead it
+ * Hosts that offer the read-only `ctx.voice` say which word the listener is hearing and how loud it is, and
+ * the mouth follows that.
+ *
+ * Without it, the plugin cannot read the audio Hermes plays (it never patches browser or app objects). It then
  * reads the words of each finished reply (from the plugin's own turn hooks) and lays out a timeline of
  * vowel shapes, lip closures and punctuation pauses at a typical text-to-speech pace. Hosts that speak
  * with the Web Speech API are followed through the read-only `window.speechSynthesis.speaking` flag.
  *
- * The result tracks what is being said, not the exact waveform. Frame-accurate lip-sync needs the host
- * to expose its playback position or level to plugins.
+ * That tracks what is being said, not the exact waveform.
  */
+
+export interface SpokenPiece {
+  readonly text: string;
+  /** `sentence` when the host knows no finer timing. */
+  readonly kind: 'word' | 'fragment' | 'sentence';
+  /** `performance.now()` ms at which the listener hears it. */
+  readonly startMs: number;
+  readonly endMs: number;
+}
+
+/** The parts of the host's `ctx.voice` used here. */
+export interface HostVoice {
+  readonly playback: { get(): { readonly status: string } };
+  readonly timeline: { get(): { readonly segments: ReadonlyArray<{ readonly pieces: readonly SpokenPiece[] }> } };
+  /** Loudness 0..1 now, ahead of the listener by `outputLatencyMs()`. */
+  level(): number;
+  outputLatencyMs(): number;
+}
 
 export type Vowel = 'aa' | 'ih' | 'ou' | 'ee' | 'oh';
 
@@ -106,7 +126,52 @@ export interface SpeechCadence {
   sample(dtSec: number): SpeechSample;
 }
 
-export function createSpeechCadence(): SpeechCadence {
+const SILENT: SpeechSample = { speaking: false, level: 0, visemes: NONE };
+
+function shape(vowel: Vowel | null, level: number): SpeechSample {
+  return { speaking: true, level, visemes: vowel ? { ...NONE, [vowel]: level } : NONE };
+}
+
+/** How far loudness opens the mouth (0..1): shut on noise, fully open from ordinary speech (about 0.25). */
+function openness(level: number): number {
+  return Math.max(0, Math.min(1, (level - 0.04) / 0.21)) ** 0.6;
+}
+
+function createVoiceCadence(voice: HostVoice): SpeechCadence {
+  const levels: Array<{ at: number; level: number }> = [];
+
+  return {
+    noteReply(): void {}, // the host says what is being spoken
+
+    sample(): SpeechSample {
+      const now = performance.now();
+      levels.push({ at: now, level: voice.level() });
+      // Drop readings older than the one the listener hears now.
+      const heardAt = now - voice.outputLatencyMs();
+      while (levels.length > 1 && levels[1]!.at <= heardAt) levels.shift();
+      if (voice.playback.get().status !== 'speaking') return SILENT;
+
+      const open = levels[0]!.at <= heardAt ? openness(levels[0]!.level) : 0;
+      const pieces = voice.timeline.get().segments.flatMap((segment) => segment.pieces);
+      const piece = pieces.find((p) => now >= p.startMs && now < p.endMs);
+      if (piece && piece.kind !== 'sentence') {
+        // Stretch the piece's mouth shapes over the time it is heard.
+        const steps = buildTimeline(piece.text);
+        const at = ((now - piece.startMs) / (piece.endMs - piece.startMs)) * (steps.at(-1)?.end ?? 0);
+        const step = steps.find((s) => s.end > at);
+        return shape(step?.vowel ?? null, (step?.open ?? 0) * open);
+      }
+      if (!piece && pieces.some((p) => p.kind !== 'sentence')) return shape(null, 0); // between words
+      // No word timing: follow the loudness.
+      return shape((['aa', 'oh', 'ee', 'ih', 'ou'] as const)[Math.floor(now / 250) % 5]!, 0.85 * open);
+    },
+  };
+}
+
+/** With `voice`, the mouth follows what the listener hears; without it, it is laid out from the reply text. */
+export function createSpeechCadence(voice?: HostVoice | null): SpeechCadence {
+  if (voice) return createVoiceCadence(voice);
+
   let clock = 0;
   let start = -1;
   let timeline: Segment[] = [];

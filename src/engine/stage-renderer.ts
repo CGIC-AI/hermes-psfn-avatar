@@ -32,7 +32,7 @@ import {
 import { VRM_PRESET_FOR_BASE, type EmotionalBase } from './emotion-mapping.ts';
 import { createHoloAvatar, type HoloAvatarHandle } from './holo-avatar.ts';
 import { disposeAvatarScenes, loadAvatarFromArrayBuffer, LocalAvatarError } from './load-avatar.ts';
-import { createSpeechCadence } from './speech-cadence.ts';
+import { createSpeechCadence, type HostVoice } from './speech-cadence.ts';
 import { VrmClipPlayer, type BakedMotionClip, type ClipFetcher } from './vrm-clip-player.ts';
 
 export type CameraPreset = 'bust' | 'waist' | 'full';
@@ -136,6 +136,7 @@ export interface StageRendererOptions {
   readonly fetchClip: ClipFetcher;
   readonly fetchClipsManifest: () => Promise<ClipManifestEntry[]>;
   readonly onStatus?: (info: { format: string; state: string; error?: string }) => void;
+  readonly voice?: HostVoice | null;
 }
 
 export interface StageRendererHandle {
@@ -154,7 +155,7 @@ export interface StageRendererHandle {
 const PRESET_EXPRESSIONS = ['happy', 'relaxed', 'surprised', 'sad', 'angry'] as const;
 
 export function createStageRenderer(options: StageRendererOptions): StageRendererHandle {
-  const { canvas, fetchClip, fetchClipsManifest, onStatus } = options;
+  const { canvas, fetchClip, fetchClipsManifest, onStatus, voice } = options;
 
   let renderer: WebGLRenderer;
   try {
@@ -709,7 +710,7 @@ export function createStageRenderer(options: StageRendererOptions): StageRendere
     }
   }
 
-  const speechCadence = createSpeechCadence();
+  const speechCadence = createSpeechCadence(voice);
 
   function updateSpeechClock(dt: number): void {
     // Drive talking animation & mouth visemes from the text of the current reply

@@ -55,6 +55,7 @@ import {
   type StagePlaybackState,
   type StageRendererHandle,
 } from '../engine/stage-renderer.ts';
+import type { HostVoice } from '../engine/speech-cadence.ts';
 import type { BakedMotionClip } from '../engine/vrm-clip-player.ts';
 
 export const PLUGIN_ID = 'hermes-psfn-avatar';
@@ -159,6 +160,7 @@ interface SharedController {
   fetchClip(clipUrl: string): Promise<BakedMotionClip>;
   fetchClipsManifest(): Promise<ClipManifestEntry[]>;
   fetchModelBuffer(filename: string): Promise<ArrayBuffer>;
+  readonly voice: HostVoice | null;
 }
 
 const CLIPS_CDN_BASE =
@@ -286,6 +288,7 @@ function createSharedController(ctx: {
   rest: RestFn;
   storage: { get<T>(k: string, d: T): T; set(k: string, v: unknown): void };
   pet?: { say?: (text: string, opts?: { id?: string; ttlMs?: number }) => () => void };
+  voice?: HostVoice;
 }): SharedController {
   const storedActiveModel = readPersistent<BackendAvatarState['active_model'] | null>(
     ctx.storage,
@@ -730,6 +733,7 @@ function createSharedController(ctx: {
     fetchClip,
     fetchClipsManifest,
     fetchModelBuffer,
+    voice: ctx.voice ?? null,
   };
 }
 
@@ -832,6 +836,7 @@ function AvatarStageView({
         fetchClip: (url) => controller.fetchClip(url),
         fetchClipsManifest: () => controller.fetchClipsManifest(),
         onStatus: (info) => setStatusInfo(info),
+        voice: controller.voice,
       });
       stageRef.current = stage;
     } catch (err) {
@@ -1951,6 +1956,7 @@ const plugin = {
     onDispose: (fn: () => void) => void;
     storage: { get<T>(k: string, d: T): T; set(k: string, v: unknown): void };
     pet?: { say?: (text: string, opts?: { id?: string; ttlMs?: number }) => () => void };
+    voice?: HostVoice;
   }) {
     const controller = createSharedController(ctx);
 
